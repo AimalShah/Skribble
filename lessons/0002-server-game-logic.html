@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 2: Server-Side Game Logic</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+  <h1>Lesson 2: Server-Side Game Logic</h1>
+  <p class="meta"><span class="tag">server</span> <span class="tag">game-loop</span> — Read time: ~12 min</p>
+
+  <div class="callout">
+    <h3>🎯 What you'll learn</h3>
+    <p>The game engine in <code>server/src/game/roomController.ts</code> — how rounds, turns, scoring, word selection, hints, and vote-kicking work. You'll be able to explain any server function.</p>
+  </div>
+
+  <h2>Overview: The Game Loop</h2>
+  <p>The game progresses through a state machine. Here's the lifecycle of a game:</p>
+
+  <div class="diagram">
+  NOT_STARTED (lobby)
+       │
+       │ startGame()
+       ▼
+  CHOOSING_WORD  ──►  nextRound() sends words to drawer
+       │
+       │ wordSelected() or timeout auto-selects
+       ▼
+  DRAWING (drawTime seconds)
+       │
+       │ All guessed? Timer up? Player left?
+       ▼
+  endRound() → givePoints() → TURN_END event
+       │
+       │ More rounds?  ──►  nextRound()
+       │ No
+       ▼
+  endGame() → WINNER event → auto-restart (public rooms)
+  </div>
+
+  <h2>The Entry Point: <code>socketHandlers.ts</code></h2>
+  <p>This file is the <strong>router</strong>. Every socket event is wired to a handler. There's no business logic here — just validation and delegation:</p>
+  <pre>
+// server/src/socket/socketHandlers.ts
+
+socket.on(GameEvent.JOIN_ROOM, async (playerData, language, roomId, isPrivate) => {
+  if (!playerData) {
+    socket.emit("error", "playerData is required");
+    return socket.disconnect();
+  }
+  if (!roomId) return await handleNewRoom(io, socket, playerData, language, isPrivate);
+  await handleNewPlayerJoin(roomId, socket, io, playerData, language);
+});
+
+socket.on(GameEvent.START_GAME, async ({ words }) => {
+  const room = await getRoomFromSocket(socket);
+  // Validates: is the host? game not started? 2+ players?
+  await startGame(room, io);
+});
+  </pre>
+
+  <p>Notice: <code>getRoomFromSocket(socket)</code> gets the game room by reading the socket's second joined room (the first is the default socket room, the second is the game room):</p>
+  <pre>
+// gameController.ts
+export async function getRoomFromSocket(socket: Socket) {
+  const roomId = Array.from(socket.rooms)[1] as string; // [1] = game room
+  const room = await getRedisRoom(roomId);
+  return room;
+}
+  </pre>
+
+  <h2><code>startGame()</code> — The Starting Gun</h2>
+  <pre>
+export async function startGame(room: Room, io: Server) {
+  clearTimers(room.roomId);                   // Clear any stale timers
+  room.gameState.currentRound = 1;            // Start at round 1
+  room.gameState.currentPlayer = 0;           // First player in array
+  room.gameState.guessedWords = [];
+  room.gameState.drawingData = [];
+  room.gameState.hintLetters = [];
+  room.gameState.roomState = RoomState.CHOOSING_WORD;
+  await setRedisRoom(room.roomId, room);
+  io.to(room.roomId).emit(GameEvent.GAME_STARTED, room);
+  await nextRound(room.roomId, io);           // Start first round
+}
+  </pre>
+  <p><strong>Key detail:</strong> The host's custom words (if any) are already saved to <code>room.settings.customWords</code> before this is called, back in the socket handler.</p>
+
+  <h2><code>nextRound()</code> — Picking the Drawer</h2>
+  <pre>
+export async function nextRound(roomId: string, io: Server) {
+  const room = await getRedisRoom(roomId);
+  const currentPlayer = room.players[room.gameState.currentPlayer];
+
+  const words = await getRandomWords(
+    room.settings.wordCount,      // default 3
+    room.settings.language,
+    room.settings.onlyCustomWords,
+    room.settings.customWords
+  );
+
+  // Send word options ONLY to the drawer
+  io.to(currentPlayer.playerId).emit(GameEvent.CHOOSE_WORD, { words, time: WORDCHOOSE_TIME });
+
+  // Tell everyone else "X is choosing a word"
+  io.to(room.roomId)
+    .except(currentPlayer.playerId)
+    .emit(GameEvent.CHOOSING_WORD, { currentPlayer, time: WORDCHOOSE_TIME });
+
+  // Auto-select a random word if drawer doesn't pick in 30 seconds
+  const timeOut = setTimeout(async () => {
+    if (room.gameState.word != "") return; // already picked
+    const randomWord = words[Math.floor(Math.random() * words.length)];
+    await wordSelected(roomId, randomWord, io);
+  }, WORDCHOOSE_TIME * 1000);
+  timers.set(roomId, timeOut);
+}
+  </pre>
+
+  <h2><code>wordSelected()</code> — Starting the Drawing Phase</h2>
+  <pre>
+export async function wordSelected(roomId: string, word: string, io: Server) {
+  const room = await getRedisRoom(roomId);
+  clearTimers(room.roomId);
+
+  room.gameState.word = word;
+  room.gameState.roomState = RoomState.DRAWING;
+  room.gameState.timerStartedAt = new Date();
+  await setRedisRoom(roomId, room);
+
+  const player = room.players[room.gameState.currentPlayer];
+
+  // Drawer sees the actual word
+  io.to(player.playerId).emit(GameEvent.WORD_CHOSEN, { word, time: room.settings.drawTime });
+
+  // Guessers see letter counts (e.g. "elephant" → [8])
+  const words_lens = convertToUnderscores(word);
+  io.to(room.roomId).except(player.playerId).emit(GameEvent.GUESS_WORD_CHOSEN, {
+    word: words_lens,
+    time: room.settings.drawTime,
+  });
+
+  // Round timer: endRound after drawTime seconds
+  const timeOut = setTimeout(async () => {
+    await endRound(roomId, io, RounEndReason.TIMEUP);
+  }, room.settings.drawTime * 1000);
+  timers.set(roomId, timeOut);
+
+  // First hint at 50% of drawTime
+  if (room.settings.hints > 0) {
+    const hintsTimeout = setTimeout(async () => {
+      await sendHint(io, roomId);
+    }, room.settings.drawTime * 0.5 * 1000);
+    hintTimers.set(roomId, hintsTimeout);
+  }
+}
+  </pre>
+
+  <h2><code>guessWord()</code> — The Core Guess Logic</h2>
+  <p>This function handles both correct and incorrect guesses:</p>
+  <pre>
+export async function guessWord(roomId, guess, socket, io) {
+  const room = await getRedisRoom(roomId);
+  const player = room.players.find(p => p.playerId === socket.id);
+  const currentPlayer = room.players[room.gameState.currentPlayer];
+
+  // Correct guess: player is not the drawer, word matches, not already guessed
+  if (
+    player.playerId !== currentPlayer.playerId &&
+    room.gameState.word === guess.toLowerCase() &&
+    !player.guessed
+  ) {
+    player.guessed = true;
+    player.guessedAt = new Date();
+    await setRedisRoom(room.roomId, room);
+    io.to(room.roomId).emit(GameEvent.GUESSED, player);
+
+    // All players guessed (except drawer)? End round early.
+    if (room.players.every(p => p.guessed || p.playerId === currentPlayer.playerId)) {
+      await endRound(room.roomId, io, RounEndReason.ALL_GUESSED);
+    }
+  } else {
+    // Wrong guess: relay to all players so it shows in chat
+    io.to(room.roomId).emit(GameEvent.GUESS, guess, player);
+  }
+}
+  </pre>
+
+  <p><strong>Important:</strong> The server stores guesses in the <code>guessedWords</code> array but doesn't actually use it anywhere. The chat is managed entirely client-side in <code>MessagesContext.tsx</code>.</p>
+
+  <h2><code>endRound()</code> — Transitioning Between Turns</h2>
+  <pre>
+export async function endRound(roomId, io, reason) {
+  let room = await getRedisRoom(roomId);
+  clearTimers(room.roomId);
+
+  // If reason=LEFT and only 2 players remain, cancel (endGame instead)
+  if (reason === RounEndReason.LEFT && room.players.length === 2) return;
+
+  room.gameState.currentPlayer += 1;
+  // If all players have drawn, increment round
+  if (room.gameState.currentPlayer >= room.players.length) {
+    room.gameState.currentRound += 1;
+    room.gameState.currentPlayer = 0;
+  }
+
+  await givePoints(roomId);  // Calculate and award points
+  room = await getRedisRoom(roomId);
+
+  // Reset guessed flags
+  room.players = room.players.map(p => ({ ...p, guessed: false, guessedAt: null }));
+  room.gameState.drawingData = [];
+
+  // Tell everyone the word and give 5 seconds pause
+  io.to(room.roomId).emit(GameEvent.TURN_END, room, { word: room.gameState.word, reason, time: END_ROUND_TIME });
+
+  room.gameState.word = "";
+  room.gameState.roomState = RoomState.CHOOSING_WORD;
+
+  setTimeout(async () => {
+    if (room.gameState.currentRound > room.settings.rounds) return await endGame(roomId, io);
+    await nextRound(roomId, io);
+  }, END_ROUND_TIME * 1000);
+}
+  </pre>
+
+  <h2>Scoring — <code>givePoints()</code></h2>
+  <pre>
+export async function givePoints(roomId: string) {
+  const room = await getRedisRoom(roomId);
+  const now = new Date();
+  const playersWhoGuessed = room.players.filter(p => p.guessed);
+
+  // Each guesser gets max(200 - secondsToGuess, 0) points
+  playersWhoGuessed.forEach(player => {
+    const guessTime = Math.abs(
+      (now.getTime() - new Date(player.guessedAt ?? now).getTime()) / 1000
+    );
+    player.score += Math.round(Math.max(200 - guessTime, 0));
+  });
+
+  // Drawer gets 50 base + 10 per guesser
+  room.players[room.gameState.currentPlayer].score +=
+    DRAWER_POINTS + playersWhoGuessed.length * BONUS_PER_GUESS;
+}
+  </pre>
+  <p><strong>Formula:</strong> Guessing faster = more points. The drawer always gets at least 50 points per round.</p>
+
+  <h2>Hint System — <code>sendHint()</code></h2>
+  <p>Hints reveal one random letter at set intervals:</p>
+  <pre>
+export async function sendHint(io: Server, roomId: string) {
+  // Pick a random character position that hasn't been revealed
+  // Reveal Math.ceil(word.length / 3) candidates, pick one
+  // Push to room.gameState.hintLetters[]
+  // Emit to all guessers
+  // Schedule next hint after HINTS_TIME seconds unless all hints sent
+}
+  </pre>
+  <p>The first hint fires at 50% of drawTime (e.g., at 30s for a 60s timer). Subsequent hints every 10 seconds.</p>
+
+  <h2>Vote-Kicking</h2>
+  <p>The <code>vote_kickers</code> array is <code>[playerId, voterId[]][]</code>. When a player initiates a vote, the server:</p>
+  <ol>
+    <li>Finds or creates an entry for the target player</li>
+    <li>Adds the voter's ID (if not already there)</li>
+    <li>Calculates <code>votesNeeded = Math.ceil(players.length / 2)</code></li>
+    <li>If votes ≥ votesNeeded, removes the player from the room and emits <code>KICKED</code> to them</li>
+  </ol>
+
+  <h2>Word Selection</h2>
+  <p>The server reads words from <code>server/words/en.txt</code> (currently only English). The <code>getRandomWords()</code> function:</p>
+  <ol>
+    <li>Loads all words from the file (cached in memory after first load)</li>
+    <li>If <code>onlyCustomWords</code> is false, blends custom words with file words (custom words get 3× weight)</li>
+    <li>Fisher-Yates shuffles the array</li>
+    <li>Returns the first <code>n</code> words</li>
+  </ol>
+
+  <div class="question">
+    <p><strong>💡 Interview Question:</strong> "What happens when a player disconnects mid-game?"</p>
+    <p><code>handlePlayerLeft()</code> checks if the leaving player is the current drawer — if so, it ends the round. It cleans up empty rooms. If only 1 player remains mid-game, the game ends. The creator torch passes to the next player in private rooms.</p>
+  </div>
+
+  <hr>
+
+  <h2>Your Turn: Trace the Game Loop</h2>
+  <p>Close this file and write out (or say aloud):</p>
+  <ol>
+    <li>The order of functions called when the host clicks "Start"</li>
+    <li>What happens when the drawer doesn't pick a word in time</li>
+    <li>How scoring works — both for drawer and guessers</li>
+    <li>How the round counter and player counter interact</li>
+    <li>When and how hints are sent</li>
+  </ol>
+
+  <div class="callout">
+    <p><strong>📚 Primary source:</strong> Read the full <code>server/src/game/roomController.ts</code> (569 lines) — it's the most important server file.</p>
+    <p><strong>➡️ Next lesson:</strong> <a href="0003-client-state-components.html">Lesson 3: Client-Side State & Components</a></p>
+    <p><strong>📖 Reference:</strong> <a href="../reference/glossary.html">Glossary & Events Reference</a></p>
+    <p><em>Ask me anything that's unclear!</em></p>
+  </div>
+</body>
+</html>

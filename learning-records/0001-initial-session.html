@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LR-0001: Initial Session — Codebase Survey &amp; Lesson Plan</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+  <h1>Learning Record: 0001</h1>
+  <p class="meta"><span class="tag">session-1</span> <span class="tag">foundation</span></p>
+
+  <h2>Summary</h2>
+  <p>First session with the user. MISSION.md was already populated. Explored the full Skribble codebase — a real-time multiplayer drawing-and-guessing game built with React + Socket.IO + Node.js + Redis.</p>
+
+  <h2>What We Did</h2>
+  <ul>
+    <li>Read every source file in <code>server/src/</code> (7 files, ~1,000 lines)</li>
+    <li>Read every source file in <code>client/src/</code> (~25 component files, ~2,500 lines)</li>
+    <li>Created shared CSS asset in <code>assets/lesson.css</code></li>
+    <li>Created comprehensive reference glossary in <code>reference/glossary.html</code></li>
+    <li>Created 5 lessons covering the full codebase</li>
+  </ul>
+
+  <h2>Lesson Plan Created</h2>
+  <ol>
+    <li><strong>0001-big-picture-architecture.html</strong> — Tech stack, process model, Socket.IO event bus, public vs private rooms, Room data structure</li>
+    <li><strong>0002-server-game-logic.html</strong> — Game loop, startGame, nextRound, wordSelected, guessWord, endRound, givePoints, hints, vote-kick</li>
+    <li><strong>0003-client-state-components.html</strong> — RoomContext, MessagesContext, component tree, key components and their jobs</li>
+    <li><strong>0004-drawing-canvas-sync.html</strong> — Canvas drawing, stroke sync, undo/clear, coordinate scaling, late-join replay</li>
+    <li><strong>0005-game-lifecycle-walkthrough.html</strong> — End-to-end walkthrough of Alice + Bob playing, edge cases, known bugs</li>
+  </ol>
+
+  <h2>Key Insights</h2>
+  <ul>
+    <li>The architecture is two-process (browser ↔ server) with Redis for state. No REST API — all game actions over Socket.IO.</li>
+    <li>The <code>Room</code> object is the central data structure — identical shape on client and server.</li>
+    <li>Server is source of truth. Client state is a projection of server events.</li>
+    <li>Several bugs were identified: undo sync issue, message context cleanup, timer leak, hardcoded IP.</li>
+    <li>Scoring: guessers get max(200 - timeToGuess, 0), drawer gets 50 + (guessers × 10).</li>
+  </ul>
+
+  <h2>Zone of Proximal Development</h2>
+  <p>User needs to move from "I know a little" to "I can defend everything in an interview." The 5 lessons cover the full surface area. Next session should focus on drilling with questions and walking through code without notes.</p>
+
+  <h2>For Next Session</h2>
+  <ul>
+    <li>Quiz the user on each lesson</li>
+    <li>Practice walking through code paths</li>
+    <li>Prepare interview question answers (why Socket.IO, why Redis, why Context, etc.)</li>
+    <li>Could generate a practice interview script</li>
+  </ul>
+</body>
+</html>

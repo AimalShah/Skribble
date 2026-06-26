@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 1: Big Picture Architecture</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+  <h1>Lesson 1: Big Picture Architecture</h1>
+  <p class="meta"><span class="tag">foundation</span> <span class="tag">architecture</span> — Read time: ~10 min</p>
+
+  <div class="callout">
+    <h3>🎯 What you'll learn</h3>
+    <p>The high-level architecture of Skribble — tech stack, process model, and how client and server communicate. After this lesson you can confidently answer: <em>"How is this project structured?"</em></p>
+  </div>
+
+  <h2>What is Skribble?</h2>
+  <p>Skribble is a real-time multiplayer drawing-and-guessing game (like <a href="https://skribbl.io">skribbl.io</a>). Players join rooms, take turns drawing a secret word, and race to guess it first. The project is split into two independent processes that communicate over WebSocket (via Socket.IO):</p>
+
+  <div class="diagram">
+  ┌──────────────────────────────────────────────────┐
+  │                   Browser                         │
+  │  ┌─────────────────────────────────────────────┐  │
+  │  │  React App (Vite + TypeScript + Tailwind)    │  │
+  │  │                                              │  │
+  │  │  Components: Game, Canvas, Chat, Settings    │  │
+  │  │  State: RoomContext, MessagesContext         │  │
+  │  └──────────────────┬──────────────────────────┘  │
+  │                     │ Socket.IO(client)           │
+  │                     │ ws://localhost:8000         │
+  └─────────────────────┼────────────────────────────┘
+                        │
+  ┌─────────────────────┼────────────────────────────┐
+  │  ┌──────────────────┴──────────────────────────┐  │
+  │  │  Node.js Server (Express + Socket.IO)        │  │
+  │  │                                              │  │
+  │  │  Port 8000                                   │  │
+  │  │                                              │  │
+  │  │  socketHandlers.ts  ← all event wiring      │  │
+  │  │  roomController.ts  ← game logic            │  │
+  │  │  gameController.ts  ← room CRUD             │  │
+  │  └──────────────────┬──────────────────────────┘  │
+  │                     │ ioredis                     │
+  │  ┌──────────────────┴──────────────────────────┐  │
+  │  │  Redis (Docker)                              │  │
+  │  │  Key-value store for room state              │  │
+  │  │  Keys: room:xxx, publicRoom:xxx              │  │
+  │  └─────────────────────────────────────────────┘  │
+  └────────────────────────────────────────────────────┘
+  </div>
+
+  <h2>Tech Stack — Why Each Choice?</h2>
+  <table>
+    <tr><th>Layer</th><th>Technology</th><th>Why</th></tr>
+    <tr>
+      <td>Frontend framework</td>
+      <td><strong>React 18</strong> + TypeScript</td>
+      <td>Component-based UI; type safety prevents runtime errors in a complex stateful app</td>
+    </tr>
+    <tr>
+      <td>Build tool</td>
+      <td><strong>Vite</strong></td>
+      <td>Fast HMR during development; SWC-based compilation for speed</td>
+    </tr>
+    <tr>
+      <td>Styling</td>
+      <td><strong>Tailwind CSS</strong></td>
+      <td>Utility-first, rapid prototyping, consistent design tokens via CSS variables</td>
+    </tr>
+    <tr>
+      <td>Backend runtime</td>
+      <td><strong>Node.js</strong> + Express</td>
+      <td>Single-language stack (JS all the way); Express for HTTP + static serving</td>
+    </tr>
+    <tr>
+      <td>Real-time comms</td>
+      <td><strong>Socket.IO</strong></td>
+      <td>WebSocket with fallback, built-in rooms, automatic reconnection, event-based API</td>
+    </tr>
+    <tr>
+      <td>State persistence</td>
+      <td><strong>Redis</strong></td>
+      <td>In-memory speed, key-value simplicity, built-in TTL for rooms, pub/sub for horizontal scaling later</td>
+    </tr>
+    <tr>
+      <td>Animation</td>
+      <td><strong>Framer Motion</strong></td>
+      <td>Declarative React animations for overlays, player cards, toast messages</td>
+    </tr>
+  </table>
+
+  <h2>Key Files — What Goes Where</h2>
+  <p>The server is at <code>server/src/</code> (7 files), the client at <code>client/src/</code> (~25 files). Here's the minimal mental model:</p>
+
+  <table>
+    <tr><th>File</th><th>Responsibility</th></tr>
+    <tr><td><code>server/src/server.ts</code></td><td>Boot Express, attach Socket.IO to HTTP server, call <code>setupSocket(io)</code></td></tr>
+    <tr><td><code>server/src/socket/socketHandlers.ts</code></td><td>Wire incoming socket events to game logic functions</td></tr>
+    <tr><td><code>server/src/game/roomController.ts</code></td><td><strong>Core game engine</strong> — start, guess, score, end, hints, vote-kick</td></tr>
+    <tr><td><code>server/src/game/gameController.ts</code></td><td>Room creation (<code>generateEmptyRoom</code>) and socket-to-room lookup</td></tr>
+    <tr><td><code>server/src/utils/redis.ts</code></td><td>Redis CRUD — <code>getRedisRoom</code>, <code>setRedisRoom</code>, <code>deleteRedisRoom</code></td></tr>
+    <tr><td><code>server/src/utils/word.ts</code></td><td>Load word list from file, shuffle, pick random words, convert to underscores</td></tr>
+    <tr><td><code>client/src/App.tsx</code></td><td>Root component — shows <code>&lt;JoinGameForm /&gt;</code> or <code>&lt;Game /&gt;</code> based on room state</td></tr>
+    <tr><td><code>client/src/context/RoomContext.tsx</code></td><td><strong>Central state</strong> — room, players, gameState, myTurn, me. Subscribes to 11+ socket events</td></tr>
+    <tr><td><code>client/src/components/GameCanvas.tsx</code></td><td>HTML5 canvas drawing + socket emission of draw data</td></tr>
+    <tr><td><code>client/src/socketHandler.ts</code></td><td>Socket.IO client singleton (one-liner)</td></tr>
+  </table>
+
+  <h2>How the Processes Talk</h2>
+  <p>There is <strong>no REST API</strong> for game actions. Everything flows through Socket.IO events:</p>
+  <ol>
+    <li><strong>Client emits</strong> an event (e.g., <code>"guess"</code> with payload <code>{ guess: "elephant" }</code>)</li>
+    <li><strong>Server handler</strong> receives it, processes it (checks word match, scores, updates Redis)</li>
+    <li><strong>Server emits</strong> back to the room (e.g., <code>"guessed"</code> with the player who guessed correctly)</li>
+    <li><strong>Client listeners</strong> in RoomContext/MessagesContext update React state, which re-renders components</li>
+  </ol>
+
+  <div class="callout">
+    <p><strong>Key insight:</strong> The server is the source of truth. Redis persists room state. Clients are stateless projections — they only know what the server tells them via events.</p>
+  </div>
+
+  <h2>The <code>Room</code> Object — Central Data Structure</h2>
+  <p>The <code>Room</code> interface is the single most important type. It's defined identically on both server and client:</p>
+  <pre>
+interface Room {
+  roomId: string;          // UUID v4
+  creator: string | null;  // Socket ID of room creator
+  players: Player[];       // Array of players in room
+  gameState: GameState;    // Current round, word, drawing data, hints
+  settings: Settings;      // Configurable game parameters
+  isPrivate: boolean;      // Private room or public matchmaking
+  vote_kickers: [string, string[]][]; // Vote-kick tracking
+}
+  </pre>
+  <p>When the server modifies a room (e.g., a player guesses), it <strong>writes the entire Room object to Redis</strong>, then emits the relevant event to the Socket.IO room so clients can update.</p>
+
+  <h2>Public vs Private Rooms</h2>
+  <ul>
+    <li><strong>Private rooms</strong>: Created with <code>isPrivate=true</code>. The creator is the host. Settings can be changed. Game starts manually.</li>
+    <li><strong>Public rooms</strong>: Matchmaking. When a player clicks "Play!", the server looks for an existing public room with space. If none found, creates a new one. Game starts automatically when 2+ players are present.</li>
+  </ul>
+  <p>The key distinction is in Redis: private rooms use key <code>room:&lt;id&gt;</code>, public rooms use <code>publicRoom:&lt;id&gt;</code>. The <code>getPublicRoom()</code> function scans for available public rooms by language.</p>
+
+  <h2>First Principles: Socket.IO Rooms vs Game Rooms</h2>
+  <p>Don't confuse the two meanings of "room":</p>
+  <ul>
+    <li><strong>Socket.IO room</strong>: A channel that the Socket.IO server manages. When a socket <code>join("abc123")</code>, it will receive all events emitted to <code>io.to("abc123")</code>.</li>
+    <li><strong>Game room</strong>: A logical <code>Room</code> object stored in Redis. It has settings, players, and game state.</li>
+  </ul>
+  <p>Both use the same <code>roomId</code> string. When a player joins a game room, their socket also joins the Socket.IO room with that ID — this is how broadcast works.</p>
+
+  <div class="question">
+    <p><strong>💡 Interview Question:</strong> "Why use Redis instead of in-memory state?"</p>
+    <p>Good answer: Redis makes the server horizontally scalable — multiple server instances can share room state. It also persists room data across server restarts. The trade-off is added infrastructure complexity (Docker container).</p>
+  </div>
+
+  <hr>
+
+  <h2>Your Turn: Explain the Architecture</h2>
+  <p>Close this file and try to recall:</p>
+  <ol>
+    <li>What are the three main processes (browser, server, database)?</li>
+    <li>How does data flow from clicking "Play!" to seeing the game screen?</li>
+    <li>What's the difference between a Socket.IO room and a game Room?</li>
+    <li>Why is Redis used instead of in-memory Maps?</li>
+    <li>What's stored in the <code>Room</code> object?</li>
+  </ol>
+
+  <div class="callout">
+    <p><strong>📚 Recommended reading:</strong> The <a href="https://socket.io/docs/v4/">Socket.IO docs</a> — especially the section on Rooms. Also read <code>server/src/server.ts</code> (22 lines) and <code>client/src/App.tsx</code> (40 lines) to see the entry points.</p>
+    <p><strong>➡️ Next lesson:</strong> <a href="0002-server-game-logic.html">Lesson 2: Server-Side Game Logic</a> — deep dive into the game engine and room controller.</p>
+    <p><strong>📖 Reference:</strong> <a href="../reference/glossary.html">Full Glossary & Events Reference</a></p>
+    <p><em>Have follow-up questions? Ask your agent — that's what I'm here for!</em></p>
+  </div>
+</body>
+</html>

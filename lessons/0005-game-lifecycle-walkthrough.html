@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 5: Game Lifecycle End-to-End</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+  <h1>Lesson 5: Game Lifecycle End-to-End Walkthrough</h1>
+  <p class="meta"><span class="tag">integraton</span> <span class="tag">walkthrough</span> — Read time: ~10 min</p>
+
+  <div class="callout">
+    <h3>🎯 What you'll learn</h3>
+    <p>Trace a complete game session from browser load to game end. See how every lesson connects — architecture, server logic, client state, and drawing sync all working together.</p>
+  </div>
+
+  <h2>Complete Game Walkthrough</h2>
+
+  <p>Let's follow Alice (who opens the app) and Bob (who joins via invite link) through a full game.</p>
+
+  <h3>Phase 1: Connection &amp; Room Join</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th><th>Code Path</th></tr>
+    <tr>
+      <td>1</td>
+      <td>Alice opens the app. Browser loads React, renders <code>&lt;JoinGameForm /&gt;</code></td>
+      <td><code>App.tsx</code> → <code>JoinGameForm.tsx</code></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>Alice enters name "Alice", selects language, customizes character, clicks "Play!"</td>
+      <td><code>handleJoin(false)</code> → <code>socket.connect()</code> → <code>socket.emit("joinRoom", playerData, language)</code></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Server receives <code>joinRoom</code>. No <code>roomId</code> provided → calls <code>handleNewRoom()</code></td>
+      <td><code>socketHandlers.ts:30-51</code></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><code>handleNewRoom</code> → <code>getPublicRoom(language)</code> scans Redis for rooms with space. None found → <code>generateEmptyRoom()</code> creates a new room with UUID</td>
+      <td><code>roomController.ts:282-301</code> → <code>gameController.ts:26-53</code></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><code>handleNewPlayerJoin()</code> creates a Player object with Alice's data + <code>playerId = socket.id</code>, pushes to room.players, saves to Redis. Alice's socket joins the Socket.IO room.</td>
+      <td><code>roomController.ts:451-496</code></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>Server emits <code>joinedRoom</code> (to Alice) and <code>playerJoined</code> (to room).</td>
+      <td><code>roomController.ts:481-482</code></td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>Client's <code>App.tsx</code> receives <code>joinedRoom</code>, calls <code>setRoom(room)</code> → React re-renders showing <code>&lt;Game&gt;</code> instead of <code>&lt;JoinGameForm&gt;</code></td>
+      <td><code>App.tsx:22</code></td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td>Simultaneously, Alice's <code>RoomContext</code> receives <code>joinedRoom</code> → stores room, identifies "me" = Alice</td>
+      <td><code>RoomContext.tsx:131-133</code></td>
+    </tr>
+  </table>
+
+  <h3>Phase 2: Private Room Setup (optional)</h3>
+  <p>If Alice chose "Create Private Room":</p>
+  <ul>
+    <li><code>isPrivate = true</code> in step 2, <code>generateEmptyRoom(socket, true)</code> sets the creator = Alice's socket ID</li>
+    <li>Alice sees <code>GameSettings</code> — can change players, drawTime, rounds, etc.</li>
+    <li>Alice copies invite link (<code>RoomLink</code>) and shares it with Bob</li>
+    <li>Bob opens the link → React reads <code>?roomId=xxx</code> from URL → <code>handleJoin()</code> emits <code>joinRoom</code> with Bob's data + <code>roomId</code></li>
+    <li>Server matches Bob to Alice's room via <code>handleNewPlayerJoin()</code></li>
+  </ul>
+
+  <h3>Phase 3: Starting the Game</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th><th>Code Path</th></tr>
+    <tr>
+      <td>9</td>
+      <td>Alice (host) clicks Start. <code>socket.emit("startGame", { words: [...] })</code></td>
+      <td><code>GameSettings.tsx:74-78</code></td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>Server validates: Alice is creator? Game not started? 2+ players?</td>
+      <td><code>socketHandlers.ts:55-69</code></td>
+    </tr>
+    <tr>
+      <td>11</td>
+      <td><code>startGame()</code> resets game state to round 1, player 0. Emits <code>gameStarted</code> to all.</td>
+      <td><code>roomController.ts:48-60</code></td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>Client receives <code>gameStarted</code>. RoomContext sets <code>myTurn</code> for the drawer, stores room.</td>
+      <td><code>RoomContext.tsx:147-152</code></td>
+    </tr>
+    <tr>
+      <td>13</td>
+      <td><code>nextRound()</code> picks 3 random words, sends <code>chooseWord</code> to drawer ONLY, <code>choosingWord</code> to others.</td>
+      <td><code>roomController.ts:150-188</code></td>
+    </tr>
+  </table>
+
+  <h3>Phase 4: Word Selection</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th><th>Code Path</th></tr>
+    <tr>
+      <td>14</td>
+      <td>Drawer (Alice) sees <code>WordSelector</code> with 3 word buttons. 30s timer starts.</td>
+      <td><code>OverlayContent.tsx</code> → <code>WordSelector.tsx</code></td>
+    </tr>
+    <tr>
+      <td>15</td>
+      <td>Bob sees "Alice is choosing a word" overlay with countdown.</td>
+      <td><code>ChoosingWord.tsx</code></td>
+    </tr>
+    <tr>
+      <td>16</td>
+      <td>Alice clicks "elephant". <code>socket.emit("wordSelect", "elephant")</code></td>
+      <td><code>WordSelector.tsx:6-8</code></td>
+    </tr>
+    <tr>
+      <td>17</td>
+      <td>Server clears word-choose timer, sets <code>roomState = DRAWING</code>, emits <code>wordChosen</code> to drawer with the word, <code>guessWordChosen</code> to others with underscores.</td>
+      <td><code>roomController.ts:191-230</code></td>
+    </tr>
+    <tr>
+      <td>18</td>
+      <td>If Alice doesn't pick in 30s, timeout auto-selects a random word.</td>
+      <td><code>roomController.ts:180-187</code></td>
+    </tr>
+  </table>
+
+  <h3>Phase 5: Drawing &amp; Guessing</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th><th>Code Path</th></tr>
+    <tr>
+      <td>19</td>
+      <td>Alice sees the canvas + toolbar + the word "elephant". 60s timer starts.</td>
+      <td><code>GameCanvas.tsx</code> + <code>Header.tsx</code></td>
+    </tr>
+    <tr>
+      <td>20</td>
+      <td>Bob sees blank canvas + underscores "_ _ _ _ _ _ _ _". 60s timer starts.</td>
+      <td><code>Header.tsx</code> renders <code>renderWord()</code> with underscores</td>
+    </tr>
+    <tr>
+      <td>21</td>
+      <td>Alice draws. Each mousemove emits <code>"draw"</code> with <code>{ x, y, color, lineWidth, end }</code>.</td>
+      <td><code>GameCanvas.tsx:53-69</code></td>
+    </tr>
+    <tr>
+      <td>22</td>
+      <td>Server relays each <code>drawData</code> to all other players. They call <code>revieveDrawData()</code>.</td>
+      <td><code>roomController.ts:304-334</code> → <code>GameCanvas.tsx:83-96</code></td>
+    </tr>
+    <tr>
+      <td>23</td>
+      <td>Bob types "elephant" and presses Enter. <code>socket.emit("guess", { guess: "elephant" })</code>.</td>
+      <td><code>Chat.tsx:21-26</code></td>
+    </tr>
+    <tr>
+      <td>24</td>
+      <td>Server checks: Bob is not drawer? Word matches? Not already guessed? Yes → marks Bob as guessed.</td>
+      <td><code>roomController.ts:111-148</code></td>
+    </tr>
+    <tr>
+      <td>25</td>
+      <td>Server emits <code>guessed</code> to all. Client shows "Bob has guessed the word" in green.</td>
+      <td><code>Message.tsx:48-55</code></td>
+    </tr>
+    <tr>
+      <td>26</td>
+      <td>If everyone guessed (or timer expires), <code>endRound()</code> is called.</td>
+      <td><code>roomController.ts:138-143</code> or <code>roomController.ts:219-221</code></td>
+    </tr>
+  </table>
+
+  <h3>Phase 6: Hints (if enabled)</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th></tr>
+    <tr><td>27</td><td>At 50% of drawTime (e.g., 30s into a 60s round), <code>sendHint()</code> fires.</td></tr>
+    <tr><td>28</td><td>Server picks a random unrevealed character index, emits <code>guessHint</code> with <code>{ index, letter }</code>.</td></tr>
+    <tr><td>29</td><td>Bob's Header receives the hint, re-renders with the revealed letter animated via Framer Motion.</td></tr>
+    <tr><td>30</td><td>After 10 more seconds, another hint is sent (up to <code>settings.hints</code> total).</td></tr>
+  </table>
+
+  <h3>Phase 7: Round End &amp; Scoring</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th></tr>
+    <tr><td>31</td><td><code>endRound()</code> calculates scores: Bob gets max(200 - secondsToGuess, 0). Alice gets 50 + bonusPerGuesser.</td></tr>
+    <tr><td>32</td><td>Server resets guessed flags, clears drawingData. </td></tr>
+    <tr><td>33</td><td>Server emits <code>turnEnded</code> with the word. Both players see "The word was 'elephant'" for 5 seconds.</td></tr>
+    <tr><td>34</td><td>After 5s pause, <code>nextRound()</code> is called. Current player advances to the next player.</td></tr>
+  </table>
+
+  <h3>Phase 8: Game End</h3>
+
+  <table>
+    <tr><th>Step</th><th>What Happens</th></tr>
+    <tr><td>35</td><td>After all rounds complete, <code>endGame()</code> emits <code>gameEnded</code>. </td></tr>
+    <tr><td>36</td><td>Client shows <code>Winners</code> overlay with final scores sorted descending.</td></tr>
+    <tr><td>37</td><td>If public room, after 10 seconds the game auto-restarts (<code>startGame()</code> called again).</td></tr>
+    <tr><td>38</td><td>If private room, back to lobby (<code>GameSettings</code>).</td></tr>
+  </table>
+
+  <h2>Edge Cases &amp; What Happens</h2>
+
+  <table>
+    <tr><th>Scenario</th><th>What the Server Does</th></tr>
+    <tr><td>Player disconnects mid-round</td><td><code>handlePlayerLeft()</code> → if they're the drawer, <code>endRound(LEFT)</code>. Removes player from array. If only 1 left, endGame(). If empty room, deleteRedisRoom(). Passes creator torch.</td></tr>
+    <tr><td>Player joins mid-game</td><td><code>handleInBetweenJoin()</code> → sends <code>GAME_STATE</code> with current game state (without the word — underscores instead), remaining time, and hints so far.</td></tr>
+    <tr><td>Host leaves private room</td><td>Creator reassigned to <code>room.players[0]</code> — the next player becomes host.</td></tr>
+    <tr><td>Drawer doesn't pick a word</td><td>30s timeout auto-selects a random word from the 3 options.</td></tr>
+    <tr><td>All guessers guess before timer</td><td><code>endRound(ALL_GUESSED)</code> — round ends early, saving remaining draw time.</td></tr>
+    <tr><td>Only 2 players, one disconnects</td><td><code>endRound()</code> with <code>LEFT</code> reason checks <code>players.length === 2</code> and returns early (doesn't end round). Then <code>handlePlayerLeft</code> sees only 1 player left and ends the game.</td></tr>
+  </table>
+
+  <h2>Known Bugs (From Code Inspection)</h2>
+  <ul>
+    <li><strong>Undo for non-drawers:</strong> The <code>UNDO_DRAW</code> event triggers <code>clearCanvas</code> on receivers, but doesn't re-load the drawing data. Non-drawers see a blank canvas after undo.</li>
+    <li><strong>MessagesContext cleanup:</strong> The cleanup <code>useEffect</code> uses <code>socket.on()</code> instead of <code>socket.off()</code> for some events (GAME_STARTED, KICKING_VOTE), creating duplicate listeners in StrictMode.</li>
+    <li><strong>Timer interval leak:</strong> <code>Header.tsx</code> sets up <code>setInterval</code> but doesn't clean it up in the <code>useEffect</code> return.</li>
+    <li><strong>Hardcoded server IP:</strong> <code>client/src/socketHandler.ts</code> has <code>192.168.29.63:8000</code> hardcoded — won't work on other networks.</li>
+  </ul>
+
+  <div class="question">
+    <p><strong>💡 Interview Question:</strong> "Walk me through what happens when I type a guess and press Enter."</p>
+    <p>Client emits <code>"guess"</code> → server <code>guessWord()</code> validates → if correct, marks <code>guessed=true</code>, emits <code>"guessed"</code> → if all guessed, <code>endRound()</code> → if wrong, emits <code>"guess"</code> back (lowercase 'g') → <code>MessagesContext</code> receives it → adds to messages array → Chat re-renders.</p>
+  </div>
+
+  <hr>
+
+  <h2>Your Turn: End-to-End Walkthrough</h2>
+  <p>Close this file. Can you explain to someone (or record yourself):</p>
+  <ol>
+    <li>The full lifecycle from opening the app to game end</li>
+    <li>What happens at every socket event boundary</li>
+    <li>How the server validates each action</li>
+    <li>Three edge cases and how the system handles them</li>
+    <li>Two bugs you could mention if asked about weaknesses</li>
+  </ol>
+
+  <div class="callout">
+    <p><strong>📚 Primary sources:</strong> All five files — <code>socketHandlers.ts</code>, <code>roomController.ts</code>, <code>RoomContext.tsx</code>, <code>GameCanvas.tsx</code>, <code>Header.tsx</code>. Re-read them now — they should make complete sense.</p>
+    <p><strong>📖 Reference:</strong> <a href="../reference/glossary.html">Glossary & Events Reference</a></p>
+    <p><em>Ask me anything! I'm here to help you prepare.</em></p>
+  </div>
+</body>
+</html>

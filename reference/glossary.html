@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skribble Glossary & Reference</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+  <style>
+    .term { font-weight: 600; color: #4c1d95; }
+    .file { font-family: 'JetBrains Mono', monospace; font-size: 0.85em; color: #7c3aed; }
+    .event-client { color: #059669; }
+    .event-server { color: #7c3aed; }
+  </style>
+</head>
+<body>
+  <h1>Skribble Codebase Reference</h1>
+  <p class="meta">Quick-reference glossary of types, events, files, and architecture patterns</p>
+
+  <h2>Project Structure</h2>
+  <pre>
+  Skribble/
+  ├── server/                     # Node.js + Socket.IO backend
+  │   └── src/
+  │       ├── server.ts           # Express + Socket.IO bootstrap (port 8000)
+  │       ├── constants.ts        # Game tuning constants
+  │       ├── types/index.ts      # Shared TypeScript types
+  │       ├── socket/
+  │       │   └── socketHandlers.ts   # All socket event wiring
+  │       ├── game/
+  │       │   ├── roomController.ts   # Core game logic (start, guess, scoring, hints)
+  │       │   └── gameController.ts   # Room creation, ID generation
+  │       └── utils/
+  │           ├── redis.ts            # Redis CRUD for rooms
+  │           ├── word.ts             # Word loading + random selection
+  │           └── commandline.ts      # Admin CLI commands
+  ├── client/                     # React + Vite + Tailwind frontend
+  │   └── src/
+  │       ├── App.tsx             # Root: room ? &lt;Game&gt; : &lt;JoinGameForm&gt;
+  │       ├── main.tsx            # ReactDOM entry point
+  │       ├── socketHandler.ts    # Socket.IO client singleton
+  │       ├── types/index.ts      # Shared types (mirrors server)
+  │       ├── context/
+  │       │   ├── RoomContext.tsx      # Core game state context provider
+  │       │   └── MessagesContext.tsx   # Chat messages context provider
+  │       ├── hooks/
+  │       │   ├── useMessages.ts      # Hook to consume MessagesContext
+  │       │   └── useIsMobile.ts      # Responsive breakpoint hook
+  │       ├── components/
+  │       │   ├── Game.tsx            # Main game layout
+  │       │   ├── GameCanvas.tsx      # HTML5 Canvas drawing + events
+  │       │   ├── GameSettings.tsx    # Pre-game settings panel
+  │       │   ├── Header.tsx          # Timer + word display
+  │       │   ├── Chat.tsx            # Chat panel + guessing
+  │       │   ├── GuessInput.tsx      # Mobile guess input
+  │       │   ├── JoinGameForm.tsx    # Landing: name, lang, join
+  │       │   ├── PlayerScores.tsx    # Player scoreboard
+  │       │   ├── Toolbar.tsx         # Color palette + brush sizes
+  │       │   ├── OverlayContent.tsx  # State-driven modal overlay
+  │       │   ├── Logo.tsx            # "Skribbl" logo
+  │       │   ├── RoomLink.tsx        # Copy invite link
+  │       │   └── .../                # Sub-components
+  │       ├── lib/utils.ts            # cn() tailwind merge
+  │       └── index.css               # Tailwind + CSS variables
+  </pre>
+
+  <h2>Key Types</h2>
+  <table>
+    <tr><th>Type</th><th>Properties</th><th>Purpose</th></tr>
+    <tr>
+      <td class="term">Room</td>
+      <td><span class="file">roomId, creator, players[], gameState, settings, isPrivate, vote_kickers[]</span></td>
+      <td>Full room state — stored in Redis</td>
+    </tr>
+    <tr>
+      <td class="term">Player</td>
+      <td><span class="file">playerId, name, score, guessed, guessedAt, appearance</span></td>
+      <td>Extends PlayerData with game runtime state</td>
+    </tr>
+    <tr>
+      <td class="term">GameState</td>
+      <td><span class="file">currentRound, drawingData[], guessedWords[], word, currentPlayer, roomState, timerStartedAt, hintLetters[]</span></td>
+      <td>Mutable game state within a room</td>
+    </tr>
+    <tr>
+      <td class="term">Settings</td>
+      <td><span class="file">players, drawTime, rounds, customWords, onlyCustomWords, language, wordCount, hints</span></td>
+      <td>Configurable room settings</td>
+    </tr>
+    <tr>
+      <td class="term">DrawData</td>
+      <td><span class="file">x, y, color, lineWidth, end</span></td>
+      <td>Single stroke segment sent via socket</td>
+    </tr>
+    <tr>
+      <td class="term">GuessedLetters</td>
+      <td><span class="file">index, letter</span></td>
+      <td>A single revealed hint character</td>
+    </tr>
+  </table>
+
+  <h2>RoomState Enum</h2>
+  <table>
+    <tr><th>State</th><th>Meaning</th></tr>
+    <tr><td><span class="file">NOT_STARTED</span></td><td>Lobby — waiting to play</td></tr>
+    <tr><td><span class="file">PLAYER_CHOOSE_WORD</span></td><td>Current drawer is picking a word</td></tr>
+    <tr><td><span class="file">CHOOSING_WORD</span></td><td>Other players see "X is choosing a word"</td></tr>
+    <tr><td><span class="file">DRAWING</span></td><td>Drawer is drawing, guessers are guessing</td></tr>
+    <tr><td><span class="file">GUESSED</span></td><td>Turn just ended — briefly shows the word</td></tr>
+    <tr><td><span class="file">TIMEUP</span></td><td>Timer ran out</td></tr>
+    <tr><td><span class="file">WINNER</span></td><td>Game ended — shows final scores</td></tr>
+  </table>
+
+  <h2>Socket Events</h2>
+  <h3>Client → Server (emitted by frontend)</h3>
+  <table>
+    <tr><th>Event</th><th>Payload</th><th>Handler in <span class="file">socketHandlers.ts</span></th></tr>
+    <tr><td><span class="file">joinRoom</span></td><td>playerData, language, roomId?, isPrivate?</td><td>handleNewRoom / handleNewPlayerJoin</td></tr>
+    <tr><td><span class="file">startGame</span></td><td>{ words }</td><td>startGame() — validates host, then runs</td></tr>
+    <tr><td><span class="file">draw</span></td><td>DrawData (x, y, color, lineWidth, end)</td><td>handleDrawAction("DRAW")</td></tr>
+    <tr><td><span class="file">clear</span></td><td>—</td><td>handleDrawAction("CLEAR")</td></tr>
+    <tr><td><span class="file">undo</span></td><td>—</td><td>handleDrawAction("UNDO")</td></tr>
+    <tr><td><span class="file">guess</span></td><td>{ guess: string }</td><td>guessWord()</td></tr>
+    <tr><td><span class="file">wordSelect</span></td><td>word: string</td><td>wordSelected()</td></tr>
+    <tr><td><span class="file">changeSettings</span></td><td>setting, value</td><td>handleSettingsChange()</td></tr>
+    <tr><td><span class="file">voteKick</span></td><td>playerId: string</td><td>handleVoteKick()</td></tr>
+    <tr><td><span class="file">disconnecting</span></td><td>—</td><td>handlePlayerLeft()</td></tr>
+  </table>
+
+  <h3>Server → Client (emitted by backend)</h3>
+  <table>
+    <tr><th>Event</th><th>Payload</th><th>Triggered by</th></tr>
+    <tr><td><span class="file">joinedRoom</span></td><td>Room</td><td>Player joins successfully</td></tr>
+    <tr><td><span class="file">playerJoined</span></td><td>Player</td><td>New player joins room</td></tr>
+    <tr><td><span class="file">playerLeft</span></td><td>Player</td><td>Player disconnects</td></tr>
+    <tr><td><span class="file">gameStarted</span></td><td>Room</td><td>Game begins</td></tr>
+    <tr><td><span class="file">chooseWord</span></td><td>{ words, time }</td><td>Sent only to current drawer</td></tr>
+    <tr><td><span class="file">choosingWord</span></td><td>{ currentPlayer, time }</td><td>Sent to all except drawer</td></tr>
+    <tr><td><span class="file">wordChosen</span></td><td>{ word, time }</td><td>Sent only to drawer when word selected</td></tr>
+    <tr><td><span class="file">guessWordChosen</span></td><td>{ word (underscores), time }</td><td>Sent to guessers with letter counts</td></tr>
+    <tr><td><span class="file">drawData</span></td><td>DrawData</td><td>Relay draw action to other players</td></tr>
+    <tr><td><span class="file">clearDraw</span></td><td>—</td><td>Canvas cleared by drawer</td></tr>
+    <tr><td><span class="file">undoDraw</span></td><td>—</td><td>Last stroke undone</td></tr>
+    <tr><td><span class="file">guessed</span></td><td>Player</td><td>A player guessed correctly</td></tr>
+    <tr><td><span class="file">guess</span></td><td>guess, player</td><td>Relay an incorrect guess to chat</td></tr>
+    <tr><td><span class="file">guessHint</span></td><td>{ index, letter }</td><td>Reveal a letter hint</td></tr>
+    <tr><td><span class="file">turnEnded</span></td><td>Room, EndTurnData</td><td>Turn transition / round ended</td></tr>
+    <tr><td><span class="file">gameEnded</span></td><td>{ room, time }</td><td>All rounds complete</td></tr>
+    <tr><td><span class="file">settingsChanged</span></td><td>setting, value</td><td>Settings updated by host</td></tr>
+    <tr><td><span class="file">gameState</span></td><td>{ gameState }</td><td>Mid-game state sync for late joiners</td></tr>
+    <tr><td><span class="file">kickVote</span></td><td>{ voter, player, votes, votesNeeded }</td><td>Vote kick progress</td></tr>
+    <tr><td><span class="file">kicked</span></td><td>—</td><td>Player was kicked (sent to kicked player)</td></tr>
+  </table>
+
+  <h2>Constants</h2>
+  <table>
+    <tr><th>Constant</th><th>Value</th><th>Meaning</th></tr>
+    <tr><td>WORDCHOOSE_TIME</td><td>30</td><td>Seconds to pick a word</td></tr>
+    <tr><td>END_ROUND_TIME</td><td>5</td><td>Seconds showing "The word was..." before next round</td></tr>
+    <tr><td>WINNER_SHOW_TIME</td><td>10</td><td>Seconds showing final scores</td></tr>
+    <tr><td>DRAWER_POINTS</td><td>50</td><td>Base points drawer gets per round</td></tr>
+    <tr><td>BONUS_PER_GUESS</td><td>10</td><td>Extra points per player who guessed</td></tr>
+    <tr><td>INITIAL_HINTS_TIME</td><td>30</td><td>When first hint is sent (50% of drawTime)</td></tr>
+    <tr><td>HINTS_TIME</td><td>10</td><td>Seconds between subsequent hints</td></tr>
+  </table>
+
+  <h2>Scoring Formula</h2>
+  <pre>
+  Guesser score = max(200 - timeToGuessInSeconds, 0)
+  Drawer score  = 50 + (numberOfGuessers * 10)
+  </pre>
+
+  <h2>Redis Key Scheme</h2>
+  <pre>
+  Private rooms:  room:&lt;roomId&gt;
+  Public rooms:   publicRoom:&lt;roomId&gt;
+  </pre>
+
+  <h2>Data Flow Summary</h2>
+  <pre>
+  [Browser] --Socket.IO--> [Node Server] --Redis--> [Persist Room]
+     |                          |
+     |&lt;--emit events-----------|  (broadcast to room)
+     |
+  RoomContext (React State) --rerenders--> Components
+  MessagesContext (React State) --renders--> Chat
+  Canvas ref (DOM) --draw commands--> &lt;canvas&gt; element
+  </pre>
+
+  <hr>
+  <p><em>Use this as a quick lookup during interview prep. Each lesson links here for reference.</em></p>
+</body>
+</html>
