@@ -2,6 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&family=Comic+Neue:wght@400;700&family=JetBrains+Mono:wght@400;500;750&display=swap');
+
+body {
+  font-family: "Comic Neue", "Inter", ui-sans-serif, system-ui, sans-serif;
+  background-color: #0d1222;
+  color: #F8FAFC;
+}
+
+h1, h2, h3, .font-display {
+  font-family: "Patrick Hand", cursive;
+  letter-spacing: 0.02em;
+}
+
+.sketchy-card {
+  border: 3px solid #1e293b;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+}
+
+.sketchy-card-subtle {
+  border: 2px solid #334155;
+  border-radius: 120px 10px 110px 12px/12px 105px 10px 115px;
+}
+
+.sketchy-btn {
+  border: 3px solid currentColor;
+  border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+  transition: transform 0.15s ease-in-out, background-color 0.1s ease-in-out;
+}
+
+.sketchy-btn:hover {
+  transform: scale(1.03) rotate(-1deg);
+}
+
+.sketchy-btn:active {
+  transform: scale(0.97) rotate(1deg);
+}
+
+.wobbly-glow {
+  box-shadow: 4px 4px 0px 0px rgba(99, 102, 241, 0.4);
+}
+
+.wobbly-glow-red {
+  box-shadow: 4px 4px 0px 0px rgba(239, 68, 68, 0.4);
+}
+
+.wobbly-glow-green {
+  box-shadow: 4px 4px 0px 0px rgba(16, 185, 129, 0.4);
+}
+
 canvas {
   display: block;
   width: 100%;
@@ -13,166 +62,38 @@ canvas {
   overflow: clip;
 }
 
-:root {
-  /* Primary (Purple) */
-  --color-primary-50: #f5f3ff;
-  --color-primary-100: #ede9fe;
-  --color-primary-200: #ddd6fe;
-  --color-primary-300: #c4b5fd;
-  --color-primary-400: #a78bfa;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #7c3aed;
-  --color-primary-700: #6d28d9;
-  --color-primary-800: #5b21b6;
-  --color-primary-900: #4c1d95;
-  --color-primary-950: #2e1065;
-
-  /* Secondary (Teal) */
-  --color-secondary-50: #f0fdfa;
-  --color-secondary-100: #ccfbf1;
-  --color-secondary-200: #99f6e4;
-  --color-secondary-300: #5eead4;
-  --color-secondary-400: #2dd4bf;
-  --color-secondary-500: #14b8a6;
-  --color-secondary-600: #0d9488;
-  --color-secondary-700: #0f766e;
-  --color-secondary-800: #115e59;
-  --color-secondary-900: #134e4a;
-  --color-secondary-950: #042f2e;
-
-  /* Neutral */
-  --color-neutral-50: #fafafa;
-  --color-neutral-100: #f5f5f5;
-  --color-neutral-200: #e5e5e5;
-  --color-neutral-300: #d4d4d4;
-  --color-neutral-400: #a3a3a3;
-  --color-neutral-500: #737373;
-  --color-neutral-600: #525252;
-  --color-neutral-700: #404040;
-  --color-neutral-800: #262626;
-  --color-neutral-900: #171717;
-  --color-neutral-950: #0a0a0a;
-
-  /* Background */
-  --color-background: #ffffff;
-  --color-background-paper: #f9fafb;
-
-  /* Text */
-  --color-text-primary: #1f2937;
-  --color-text-secondary: #4b5563;
-  --color-text-disabled: #9ca3af;
-
-  /* Success */
-  --color-success-light: #d1fae5;
-  --color-success-main: #10b981;
-  --color-success-dark: #065f46;
-
-  /* Warning */
-  --color-warning-light: #fef3c7;
-  --color-warning-main: #f59e0b;
-  --color-warning-dark: #92400e;
-
-  /* Error */
-  --color-error-light: #fee2e2;
-  --color-error-main: #ef4444;
-  --color-error-dark: #b91c1c;
-
-  /* Info */
-  --color-info-light: #dbeafe;
-  --color-info-main: #3b82f6;
-  --color-info-dark: #1e40af;
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.4);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.35);
+  border: 2px solid #0d1222;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.55);
 }
 
-/* Dark mode theme */
-.dark {
-  /* Primary (Purple) - Dark Mode */
-  --color-primary-50: #2e1065;
-  --color-primary-100: #4c1d95;
-  --color-primary-200: #5b21b6;
-  --color-primary-300: #6d28d9;
-  --color-primary-400: #7c3aed;
-  --color-primary-500: #8b5cf6;
-  --color-primary-600: #a78bfa;
-  --color-primary-700: #c4b5fd;
-  --color-primary-800: #ddd6fe;
-  --color-primary-900: #ede9fe;
-  --color-primary-950: #f5f3ff;
-
-  /* Background - Dark Mode */
-  --color-background: #121212;
-  --color-background-paper: #1e1e1e;
-
-  /* Text - Dark Mode */
-  --color-text-primary: #f9fafb;
-  --color-text-secondary: #d1d5db;
-  --color-text-disabled: #6b7280;
-
-  /* Other colors would also need dark mode adjustments */
-}
-
-@layer base {
-  body {
-    @apply bg-background text-text-primary;
-  }
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
-    @apply font-medium text-text-primary;
-  }
-  h1 {
-    @apply text-3xl;
-  }
-  h2 {
-    @apply text-2xl;
-  }
-  h3 {
-    @apply text-xl;
-  }
-  a {
-    @apply text-primary-600 hover:text-primary-700;
-  }
-}
-
-/* Custom component classes */
 @layer components {
   .btn {
     @apply px-4 py-2 rounded-md font-medium transition-colors;
   }
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700;
+    @apply bg-indigo-600 text-white hover:bg-indigo-500;
   }
   .btn-secondary {
-    @apply bg-secondary-500 text-white hover:bg-secondary-600;
+    @apply bg-yellow-400 text-slate-950 hover:bg-yellow-300 font-bold;
   }
   .btn-outline {
-    @apply border border-primary-600 text-primary-600 hover:bg-primary-50;
+    @apply border border-indigo-500 text-indigo-400 hover:bg-indigo-500/10;
   }
   .card {
-    @apply bg-background-paper rounded-lg p-6 shadow-md;
+    @apply bg-slate-900/80 rounded-lg p-6 shadow-md border border-slate-700;
   }
   .input {
-    @apply w-full px-3 py-2 rounded-md border border-neutral-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+    @apply w-full px-3 py-2 rounded-md bg-slate-950/80 border-2 border-slate-800 text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-600;
   }
-}
-
-::-webkit-scrollbar {
-  width: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: #f0f4f8; /* Light background for scrollbar track */
-  border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-neutral-500); /* Primary color (blue) */
-  border-radius: 10px;
-  border: 2px solid #ffffff; /* White border for a cleaner look */
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #3578c0; /* Darker blue on hover */
 }

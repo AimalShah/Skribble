@@ -118,6 +118,7 @@ export interface Room {
   gameState: GameState; // Current state of the game
   settings: Settings;
   isPrivate: boolean;
+  vote_kickers: [string, string[]][];
 }
 
 export enum RoomState {

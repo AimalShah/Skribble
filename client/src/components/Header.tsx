@@ -3,6 +3,7 @@ import { EndTurnData, GameEvent, GameState, Room } from "../types";
 import { socket } from "../socketHandler";
 import { useRoom } from "../context/RoomContext";
 import { AnimatePresence, motion } from "framer-motion";
+import { Clock } from "lucide-react";
 
 const GameHeader = () => {
   const [word, setWord] = useState<string | number[]>("");
@@ -12,10 +13,6 @@ const GameHeader = () => {
   const [hintLetters, setHintLetters] = useState<
     { letter: string; index: number }[]
   >([]);
-
-  useEffect(() => {
-    console.log("Timer", timer);
-  }, [timer]);
 
   function initTimer({
     word,
@@ -31,14 +28,13 @@ const GameHeader = () => {
         setTimer((e) => (e > 0 ? e - 1 : e));
       }, 1000)
     );
-
     setWord(word);
     setHintLetters([]);
   }
+
   function initTimerForWord({ time }: { time: number }) {
     if (interval) clearInterval(interval);
     setTimer(time);
-
     startInterval(
       setInterval(() => {
         setTimer((e) => (e > 0 ? e - 1 : e));
@@ -95,14 +91,14 @@ const GameHeader = () => {
   });
 
   function renderWord() {
-    if (typeof word === "string") return <span>{word}</span>; // Show full word for drawer
+    if (typeof word === "string") return <span>{word}</span>;
 
     let wordIndex = 0;
     return word.map((length, wordPartIndex) => {
       const wordPart = Array.from({ length }, () => {
         const hint = hintLetters.find((e) => e.index === wordIndex);
         const displayChar = hint ? hint.letter : "_";
-        wordIndex++; // Increment for next letter
+        wordIndex++;
         return (
           <motion.span
             key={wordIndex}
@@ -118,8 +114,7 @@ const GameHeader = () => {
 
       return (
         <span key={wordPartIndex} className="flex items-center gap-1">
-          {wordPartIndex > 0 && <span className="px-1"> </span>}{" "}
-          {/* Space between words */}
+          {wordPartIndex > 0 && <span className="px-1"> </span>}
           {wordPart}
         </span>
       );
@@ -127,11 +122,18 @@ const GameHeader = () => {
   }
 
   return (
-    <div className=" mx-auto bg-background-paper rounded-lg text-primary font-bold py-2 px-4 flex items-center justify-between z-50 border-2 border-primary-400 text-center">
-      <span className="text-lg font-semibold">{timer}</span>
-      <span className="text-xl font-bold self-center flex gap-5 relative select-none">
+    <div className="mx-4 max-w-7xl lg:mx-auto bg-slate-900/80 sketchy-card border-slate-700 py-3 px-6 flex items-center justify-between gap-4 z-50 wobbly-glow select-none">
+      <div className={`flex items-center gap-2 px-4 py-2 font-bold sketchy-btn ${
+        timer <= 10
+          ? 'bg-red-500/20 text-red-400 border-red-500 animate-pulse'
+          : 'bg-slate-950 text-slate-100 border-indigo-500/50'
+      }`}>
+        <Clock className={`w-5 h-5 ${timer <= 10 ? 'text-red-400 animate-bounce' : 'text-indigo-400'}`} />
+        <span className="text-xl font-display">{timer}</span>
+      </div>
+      <span className="text-xl font-bold font-display text-yellow-300 flex gap-5 relative">
         <AnimatePresence>{renderWord()}</AnimatePresence>
-        <span className="text-xs -left-4 relative flex gap-2">
+        <span className="text-xs -left-4 relative flex gap-2 text-slate-400">
           {typeof word !== "string" &&
             word.map((n, i) => <span key={i}>{n}</span>)}
         </span>

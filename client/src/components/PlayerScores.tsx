@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import { GameEvent, Player, Room } from "../types";
 import { socket } from "../socketHandler";
 import { useRoom } from "../context/RoomContext";
-import { AnimatePresence } from "framer-motion";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import PlayerCard from "./Player/PlayerCard";
 
 const PlayerScores: React.FC = () => {
@@ -41,13 +40,21 @@ const PlayerScores: React.FC = () => {
   });
 
   return (
-    <div className="w-2/4 sm:w-[300px] overflow-x-hidden  h-[400px] sm:h-[650px] ">
+    <div className="bg-slate-900/80 sketchy-card border-slate-700 p-4 flex flex-col gap-3 shadow-lg wobbly-glow-red h-full">
+      <div className="text-sm font-bold uppercase tracking-wider text-yellow-300 border-b-2 border-dashed border-slate-800 pb-2 mb-1 flex items-center justify-between font-display">
+        <span>Scoreboard</span>
+        <span className="text-[11px] text-indigo-300 font-display bg-indigo-950 border border-indigo-800 px-2 py-0.5 rounded-md">
+          {players.length} Artists
+        </span>
+      </div>
+
       {currentRound > 0 && (
-        <p className="text-center text-primary-400 font-semibold mt-2 bg-background-paper rounded-lg py-1">
+        <p className="text-center text-indigo-400 font-display font-semibold bg-slate-950 border border-slate-800 rounded-xl py-1 text-sm">
           Round {currentRound} of {settings.rounds}
         </p>
       )}
-      <motion.ul className="mt-1 space-y-1">
+
+      <motion.ul className="space-y-2 flex-1 overflow-y-auto">
         <AnimatePresence>
           {displayers
             .sort((a, b) => b.score - a.score)

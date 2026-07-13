@@ -15,28 +15,33 @@ const Game = ({ room }: { room: Room }) => {
   const isMobile = useIsMobile();
 
   return (
-    <MessagesContext>
-      <Logo />
-      <GameHeader />
-      <div className="flex flex-grow flex-col sm:flex-row justify-center w-full h-screen ">
-        <AudioManager />
-        <div className="flex-col">{!isMobile && <PlayerScores />}</div>
-        <div>
-          <div className="relative overflow-hidden">
-            <GameCanvas room={room} />
-            <OverlayContent />
-            <ToastStack />
+    <div className="min-h-screen bg-[#0d1222] flex flex-col">
+      <MessagesContext>
+        <Logo />
+        <GameHeader />
+        <div className="flex-1 flex flex-col lg:flex-row gap-4 px-4 pb-4 max-w-7xl mx-auto w-full">
+          <AudioManager />
+          {/* Left: Players */}
+          <div className="w-full lg:w-72 shrink-0">
+            <PlayerScores />
           </div>
-        </div>
-        <div className="flex-col">
-          <GuessInput />
-          <div className="flex">
+          {/* Center: Canvas */}
+          <div className="flex-1 min-w-0 flex flex-col gap-4">
+            <div className="flex-1 relative sketchy-card border-slate-700 bg-slate-950 p-2 overflow-hidden wobbly-glow min-h-[350px]">
+              <GameCanvas room={room} />
+              <OverlayContent />
+              <ToastStack />
+            </div>
+          </div>
+          {/* Right: Chat */}
+          <div className="w-full lg:w-80 shrink-0 flex flex-col gap-4">
+            <GuessInput />
             {isMobile && <PlayerScores />}
             <Chat />
           </div>
         </div>
-      </div>
-    </MessagesContext>
+      </MessagesContext>
+    </div>
   );
 };
 

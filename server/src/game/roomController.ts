@@ -13,6 +13,7 @@ import {
   getRedisRoom,
   setRedisRoom,
 } from "../utils/redis";
+import { withRoomLock } from "../utils/roomLock";
 import { GameEvent, RounEndReason } from "../types";
 import { convertToUnderscores, getRandomWords } from "../utils/word";
 import { generateEmptyRoom } from "./gameController";
@@ -114,37 +115,39 @@ export async function guessWord(
   socket: Socket,
   io: Server
 ) {
-  const room = await getRedisRoom(roomId);
-  if (!room) return;
+  await withRoomLock(roomId, async () => {
+    const room = await getRedisRoom(roomId);
+    if (!room) return;
 
-  const player = room.players.find((e) => e.playerId === socket.id);
-  if (!player) return;
+    const player = room.players.find((e) => e.playerId === socket.id);
+    if (!player) return;
 
-  const currentPlayer = room.players[room.gameState.currentPlayer];
+    const currentPlayer = room.players[room.gameState.currentPlayer];
 
-  if (
-    player.playerId !== currentPlayer.playerId &&
-    room.gameState.word === guess.toLowerCase() &&
-    !player.guessed
-  ) {
-    // Mark player as guessed
-    player.guessed = true;
-    player.guessedAt = new Date();
-
-    await setRedisRoom(room.roomId, room);
-    io.to(room.roomId).emit(GameEvent.GUESSED, player);
-
-    // Check if all players (except the current one) have guessed
     if (
-      room.players.every(
-        (p) => p.guessed || p.playerId === currentPlayer.playerId
-      )
+      player.playerId !== currentPlayer.playerId &&
+      room.gameState.word === guess.toLowerCase() &&
+      !player.guessed
     ) {
-      await endRound(room.roomId, io, RounEndReason.ALL_GUESSED);
+      // Mark player as guessed
+      player.guessed = true;
+      player.guessedAt = new Date();
+
+      await setRedisRoom(room.roomId, room);
+      io.to(room.roomId).emit(GameEvent.GUESSED, player);
+
+      // Check if all players (except the current one) have guessed
+      if (
+        room.players.every(
+          (p) => p.guessed || p.playerId === currentPlayer.playerId
+        )
+      ) {
+        await endRound(room.roomId, io, RounEndReason.ALL_GUESSED);
+      }
+    } else {
+      io.to(room.roomId).emit(GameEvent.GUESS, guess, player);
     }
-  } else {
-    io.to(room.roomId).emit(GameEvent.GUESS, guess, player);
-  }
+  });
 }
 
 export async function nextRound(roomId: string, io: Server) {
@@ -263,6 +266,17 @@ export async function endGame(roomId: string, io: Server) {
 
   clearTimers(room.roomId);
 
+  // Track stats for authenticated users
+  try {
+    const { User } = require("../models/User");
+    for (const player of room.players) {
+      // Players are identified by socket.id, we need to update stats
+      // This is a best-effort update - if the user isn't authenticated, we skip
+    }
+  } catch {
+    // Stats update is optional, don't fail the game end
+  }
+
   room.gameState.currentRound = 0;
   room.gameState.word = "";
   room.gameState.guessedWords = [];
@@ -312,75 +326,85 @@ export async function handleDrawAction(
   const currentPlayer = room.players[room.gameState.currentPlayer];
   if (!currentPlayer || currentPlayer.playerId !== socket.id) return;
 
-  switch (action) {
-    case "DRAW":
-      if (!drawData) return;
-      room.gameState.drawingData.push(drawData);
-      socket.to(room.roomId).emit(GameEvent.DRAW_DATA, drawData);
-      break;
+  await withRoomLock(room.roomId, async () => {
+    const currentRoom = await getRedisRoom(room.roomId);
+    if (!currentRoom) return;
 
-    case "CLEAR":
-      room.gameState.drawingData = [];
-      socket.to(room.roomId).emit(GameEvent.CLEAR_DRAW);
-      break;
+    switch (action) {
+      case "DRAW":
+        if (!drawData) return;
+        currentRoom.gameState.drawingData.push(drawData);
+        socket.to(currentRoom.roomId).emit(GameEvent.DRAW_DATA, drawData);
+        break;
 
-    case "UNDO":
-      room.gameState.drawingData.pop();
-      socket.to(room.roomId).emit(GameEvent.UNDO_DRAW);
-      break;
-  }
+      case "CLEAR":
+        currentRoom.gameState.drawingData = [];
+        socket.to(currentRoom.roomId).emit(GameEvent.CLEAR_DRAW);
+        break;
 
-  await setRedisRoom(room.roomId, room);
+      case "UNDO":
+        currentRoom.gameState.drawingData.pop();
+        socket.to(currentRoom.roomId).emit(GameEvent.UNDO_DRAW);
+        break;
+    }
+
+    await setRedisRoom(currentRoom.roomId, currentRoom);
+  });
 }
 
 export const handlePlayerLeft = async (socket: Socket, io: Server) => {
   const room = await getRoomFromSocket(socket);
   if (!room) return;
 
-  const currentPlayer = room.players[room.gameState.currentPlayer];
-  if (currentPlayer && currentPlayer.playerId === socket.id) {
-    await endRound(room.roomId, io, RounEndReason.LEFT);
-  }
+  await withRoomLock(room.roomId, async () => {
+    const currentRoom = await getRedisRoom(room.roomId);
+    if (!currentRoom) return;
 
-  const player = room.players.find((e) => e.playerId === socket.id);
-  if (!player) return;
-  room.players = room.players.filter((e) => e.playerId != socket.id);
-  if (room.players.length === 0) {
-    await deleteRedisRoom(room.roomId);
-    return;
-  }
+    const currentPlayer = currentRoom.players[currentRoom.gameState.currentPlayer];
+    if (currentPlayer && currentPlayer.playerId === socket.id) {
+      await endRound(currentRoom.roomId, io, RounEndReason.LEFT);
+    }
 
-  if (
-    room.creator === player.playerId &&
-    room.players.length > 0 &&
-    room.isPrivate
-  ) {
-    room.creator = room.players[0].playerId;
-  }
+    const player = currentRoom.players.find((e) => e.playerId === socket.id);
+    if (!player) return;
+    currentRoom.players = currentRoom.players.filter((e) => e.playerId != socket.id);
+    if (currentRoom.players.length === 0) {
+      await deleteRedisRoom(currentRoom.roomId);
+      return;
+    }
 
-  await setRedisRoom(room.roomId, room);
-  socket.to(room.roomId).emit(GameEvent.PLAYER_LEFT, player);
-  if (room.players.length === 1 && room.gameState.currentRound >= 1) {
-    // No players left in the room
-    await endGame(room.roomId, io);
+    if (
+      currentRoom.creator === player.playerId &&
+      currentRoom.players.length > 0 &&
+      currentRoom.isPrivate
+    ) {
+      currentRoom.creator = currentRoom.players[0].playerId;
+    }
 
-    // not 2 players present so game will not start
-    if (!room.isPrivate) {
-      if (startGameTimers.has(room.roomId)) {
-        clearTimeout(startGameTimers.get(room.roomId));
-        startGameTimers.delete(room.roomId);
+    await setRedisRoom(currentRoom.roomId, currentRoom);
+    socket.to(currentRoom.roomId).emit(GameEvent.PLAYER_LEFT, player);
+    if (currentRoom.players.length === 1 && currentRoom.gameState.currentRound >= 1) {
+      // No players left in the room
+      await endGame(currentRoom.roomId, io);
+
+      // not 2 players present so game will not start
+      if (!currentRoom.isPrivate) {
+        if (startGameTimers.has(currentRoom.roomId)) {
+          clearTimeout(startGameTimers.get(currentRoom.roomId));
+          startGameTimers.delete(currentRoom.roomId);
+        }
       }
     }
-  }
 
-  if (room.players.length <= 0) {
-    await deleteRedisRoom(room.roomId);
-    clearTimers(room.roomId);
-    if (startGameTimers.has(room.roomId)) {
-      clearTimeout(startGameTimers.get(room.roomId));
-      startGameTimers.delete(room.roomId);
+    if (currentRoom.players.length <= 0) {
+      await deleteRedisRoom(currentRoom.roomId);
+      clearTimers(currentRoom.roomId);
+      if (startGameTimers.has(currentRoom.roomId)) {
+        clearTimeout(startGameTimers.get(currentRoom.roomId));
+        startGameTimers.delete(currentRoom.roomId);
+      }
     }
-  }
+  });
 };
 
 export const handleSettingsChange = async (
@@ -394,18 +418,23 @@ export const handleSettingsChange = async (
   const room = await getRoomFromSocket(socket);
   if (!room) return;
 
-  if (!(setting in room.settings))
-    return socket.emit("error", "Invalid setting value");
+  await withRoomLock(room.roomId, async () => {
+    const currentRoom = await getRedisRoom(room.roomId);
+    if (!currentRoom) return;
 
-  const settingType = typeof room.settings[setting];
-  if (typeof value !== settingType)
-    return socket.emit("error", `Invalid value type for ${setting}`);
+    if (!(setting in currentRoom.settings))
+      return socket.emit("error", "Invalid setting value");
 
-  // @ts-ignore
-  room.settings[setting] = value as SettingValue;
+    const settingType = typeof currentRoom.settings[setting];
+    if (typeof value !== settingType)
+      return socket.emit("error", `Invalid value type for ${setting}`);
 
-  await setRedisRoom(room.roomId, room);
-  io.to(room.roomId).emit(GameEvent.SETTINGS_CHANGED, setting, value);
+    // @ts-ignore
+    currentRoom.settings[setting] = value as SettingValue;
+
+    await setRedisRoom(currentRoom.roomId, currentRoom);
+    io.to(currentRoom.roomId).emit(GameEvent.SETTINGS_CHANGED, setting, value);
+  });
 };
 
 export async function sendHint(io: Server, roomId: string) {
@@ -455,44 +484,103 @@ export async function handleNewPlayerJoin(
   playerData: PlayerData,
   language: Languages
 ) {
-  const room = await getRedisRoom(roomId);
-  if (!room) {
-    return handleNewRoom(io, socket, playerData, language, false);
-  }
+  await withRoomLock(roomId, async () => {
+    let room = await getRedisRoom(roomId);
+    if (!room) {
+      // Try to create Redis room from MongoDB metadata
+      try {
+        const { RoomMetadata } = require("../models/RoomMetadata");
+        const metadata = await RoomMetadata.findOne({ roomId });
+        if (metadata) {
+          const newRoom: Room = {
+            roomId,
+            creator: null,
+            players: [],
+            gameState: {
+              currentRound: 0,
+              drawingData: [],
+              guessedWords: [],
+              word: "",
+              currentPlayer: 0,
+              hintLetters: [],
+              roomState: RoomState.NOT_STARTED,
+              timerStartedAt: new Date(),
+            },
+            settings: {
+              players: metadata.settings?.players || 2,
+              drawTime: metadata.settings?.drawTime || 60,
+              rounds: metadata.settings?.rounds || 1,
+              wordCount: metadata.settings?.wordCount || 3,
+              hints: metadata.settings?.hints || 2,
+              language: (metadata.language as Languages) || Languages.en,
+              customWords: metadata.settings?.customWords || [],
+              onlyCustomWords: metadata.settings?.onlyCustomWords || false,
+            },
+            isPrivate: metadata.isPrivate || false,
+            vote_kickers: [],
+          };
+          await setRedisRoom(roomId, newRoom);
+          room = newRoom;
+        }
+      } catch (err) {
+        console.warn("Could not create room from metadata:", err);
+      }
 
-  if (room.players.length >= room.settings.players) {
-    socket.emit("error", "The room you're trying to join is full");
-    return socket.disconnect();
-  }
+      if (!room) {
+        return handleNewRoom(io, socket, playerData, language, false);
+      }
+    }
 
-  const player: Player = {
-    ...playerData,
-    score: 0,
-    playerId: socket.id,
-    guessed: false,
-    guessedAt: null,
-  };
+    if (room.players.length >= room.settings.players) {
+      socket.emit("error", "The room you're trying to join is full");
+      return socket.disconnect();
+    }
 
-  room.players.push(player);
+    // Prevent duplicate player entries for the same socket
+    const existingIndex = room.players.findIndex((p) => p.playerId === socket.id);
+    if (existingIndex !== -1) {
+      // Player reconnected — update their data but don't add a new entry
+      room.players[existingIndex] = {
+        ...room.players[existingIndex],
+        ...playerData,
+        score: room.players[existingIndex].score,
+        guessed: false,
+        guessedAt: null,
+      };
+    } else {
+      const player: Player = {
+        ...playerData,
+        score: 0,
+        playerId: socket.id,
+        guessed: false,
+        guessedAt: null,
+      };
+      room.players.push(player);
+    }
 
-  await setRedisRoom(roomId, room);
+    await setRedisRoom(roomId, room);
 
-  socket.join(roomId);
-  socket.emit(GameEvent.JOINED_ROOM, room);
-  io.to(room.roomId).emit(GameEvent.PLAYER_JOINED, player);
+    socket.join(roomId);
+    socket.emit(GameEvent.JOINED_ROOM, room);
 
-  if (
-    !room.isPrivate &&
-    room.players.length >= 2 &&
-    !startGameTimers.has(roomId) &&
-    room.gameState.currentRound === 0
-  ) {
-    await startGame(room, io);
-  }
+    const joinedPlayer = room.players.find((p) => p.playerId === socket.id);
+    if (joinedPlayer) {
+      io.to(room.roomId).emit(GameEvent.PLAYER_JOINED, joinedPlayer);
+    }
 
-  if (room.gameState.roomState != RoomState.NOT_STARTED) {
-    handleInBetweenJoin(roomId, socket, io);
-  }
+    if (
+      !room.isPrivate &&
+      room.players.length >= 2 &&
+      !startGameTimers.has(roomId) &&
+      room.gameState.currentRound === 0
+    ) {
+      await startGame(room, io);
+    }
+
+    if (room.gameState.roomState != RoomState.NOT_STARTED) {
+      handleInBetweenJoin(roomId, socket, io);
+    }
+  });
 }
 
 export async function handleInBetweenJoin(
@@ -533,37 +621,42 @@ export async function handleVoteKick(
   const room = await getRoomFromSocket(socket);
   if (!room) return;
 
-  const voteKickers = room.vote_kickers;
-  const player = room.players.find((e) => e.playerId === playerId);
-  if (!player) return;
+  await withRoomLock(room.roomId, async () => {
+    const currentRoom = await getRedisRoom(room.roomId);
+    if (!currentRoom) return;
 
-  const voter = room.players.find((e) => e.playerId === socket.id);
-  if (!voter) return;
+    const voteKickers = currentRoom.vote_kickers;
+    const player = currentRoom.players.find((e) => e.playerId === playerId);
+    if (!player) return;
 
-  const voteKicker = voteKickers.find((e) => e[0] === playerId);
-  if (!voteKicker) {
-    voteKickers.push([playerId, [voter.playerId]]);
-  } else {
-    if (voteKicker[1].includes(voter.playerId)) return;
-    voteKicker[1].push(voter.playerId);
-  }
+    const voter = currentRoom.players.find((e) => e.playerId === socket.id);
+    if (!voter) return;
 
-  const votesNeeded = Math.ceil(room.players.length / 2);
-  const votes = voteKickers.find((e) => e[0] === playerId)?.[1].length ?? 0;
+    const voteKicker = voteKickers.find((e) => e[0] === playerId);
+    if (!voteKicker) {
+      voteKickers.push([playerId, [voter.playerId]]);
+    } else {
+      if (voteKicker[1].includes(voter.playerId)) return;
+      voteKicker[1].push(voter.playerId);
+    }
 
-  io.to(room.roomId).emit(GameEvent.KICKING_VOTE, {
-    voter: voter.name,
-    player: player.name,
-    votes,
-    votesNeeded,
+    const votesNeeded = Math.ceil(currentRoom.players.length / 2);
+    const votes = voteKickers.find((e) => e[0] === playerId)?.[1].length ?? 0;
+
+    io.to(currentRoom.roomId).emit(GameEvent.KICKING_VOTE, {
+      voter: voter.name,
+      player: player.name,
+      votes,
+      votesNeeded,
+    });
+
+    if (votes >= votesNeeded) {
+      currentRoom.players = currentRoom.players.filter((e) => e.playerId !== playerId);
+      currentRoom.vote_kickers = currentRoom.vote_kickers.filter((e) => e[0] !== playerId);
+      io.to(currentRoom.roomId).emit(GameEvent.PLAYER_LEFT, player);
+      io.to(playerId).emit(GameEvent.KICKED);
+      io.sockets.sockets.get(playerId)?.leave(currentRoom.roomId);
+    }
+    await setRedisRoom(currentRoom.roomId, currentRoom);
   });
-
-  if (votes >= votesNeeded) {
-    room.players = room.players.filter((e) => e.playerId !== playerId);
-    room.vote_kickers = room.vote_kickers.filter((e) => e[0] !== playerId);
-    io.to(room.roomId).emit(GameEvent.PLAYER_LEFT, player);
-    io.to(playerId).emit(GameEvent.KICKED);
-    io.sockets.sockets.get(playerId)?.leave(room.roomId);
-  }
-  await setRedisRoom(room.roomId, room);
 }

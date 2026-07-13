@@ -34,23 +34,24 @@ export default function OverlayContent() {
       socket.off(GameEvent.TURN_END, handleWord);
     };
   }, []);
+
   return (
     <motion.div
       initial={{ opacity: 1 }}
       animate={{ opacity: roomState === RoomState.DRAWING ? 0 : 1 }}
       transition={{ duration: 0.4, ease: "easeInOut" }}
-      className={`absolute w-full h-full bg-black/75 top-0 flex items-center justify-center  ${
+      className={`absolute inset-0 bg-slate-950/90 flex items-center justify-center z-20 rounded-2xl ${
         roomState === RoomState.DRAWING && "pointer-events-none"
       }`}
     >
       <AnimatePresence mode="wait">
         <motion.div
           key={roomState}
-          initial={{ y: "-50%", opacity: 0 }}
+          initial={{ y: "-10%", opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: "50%", opacity: 0 }}
-          transition={{ duration: 0.4, ease: "easeInOut" }}
-          className="w-full h-full flex items-center justify-center"
+          exit={{ y: "10%", opacity: 0 }}
+          transition={{ duration: 0.3, ease: "easeInOut" }}
+          className="w-full h-full flex items-center justify-center p-6"
         >
           {roomState === RoomState.NOT_STARTED && <GameSettings />}
           {roomState === RoomState.CHOOSING_WORD && <ChoosingWord />}
@@ -59,9 +60,12 @@ export default function OverlayContent() {
           )}
           {roomState === RoomState.WINNER && <Winners />}
           {roomState === RoomState.GUESSED && (
-            <span className="font-bold text-white text-2xl">
-              The word was <strong className="text-green-500">{word}</strong>
-            </span>
+            <div className="text-center">
+              <span className="font-display text-3xl text-white">
+                The word was{" "}
+                <strong className="text-yellow-300">{word}</strong>
+              </span>
+            </div>
           )}
         </motion.div>
       </AnimatePresence>

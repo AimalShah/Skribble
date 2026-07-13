@@ -21,63 +21,64 @@ export interface IMessage {
 export const Message = ({ message }: { message: IMessage }) => {
   let content = (
     <>
-      <b>{message.sender}</b> <span>{message.message}</span>
+      <b className="text-slate-100">{message.sender}</b>{" "}
+      <span className="text-slate-300">{message.message}</span>
     </>
   );
-  let bgClass = "bg-background-paper";
+  let bgClass = "bg-slate-950/60 border-slate-800";
 
   switch (message.type) {
     case MessageType.PlayerJoin:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-emerald-500/10 border-emerald-500/50";
       content = (
-        <span className="text-success-main">
+        <span className="text-emerald-400 font-display">
           {message.sender} joined the game
         </span>
       );
       break;
     case MessageType.PlayerLeft:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-red-500/10 border-red-500/50";
       content = (
-        <span className="text-error-main">{message.sender} left the game</span>
+        <span className="text-red-400 font-display">{message.sender} left the game</span>
       );
       break;
     case MessageType.Error:
-      bgClass = "bg-neutral-100";
-      content = <span className="text-error-main">{message.message}</span>;
+      bgClass = "bg-red-500/10 border-red-500/50";
+      content = <span className="text-red-400 font-display">{message.message}</span>;
       break;
     case MessageType.WordGuessed:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-emerald-500/10 border-emerald-500/80";
       content = (
-        <span className="text-success-main">
-          <b>{message.sender}</b> has guessed the word
+        <span className="text-emerald-300 font-bold font-display">
+          <b>{message.sender}</b> guessed the word!
         </span>
       );
       break;
     case MessageType.WordChoosen:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-indigo-950/60 border-indigo-900/40";
       content = (
-        <span className="text-success-main">
+        <span className="text-indigo-300 font-display">
           <b>{message.sender}</b> {message.message}
         </span>
       );
       break;
     case MessageType.GuessClose:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-amber-500/10 border-amber-500/80";
       content = (
-        <span className="text-warning-dark">'{message.message}' is close</span>
+        <span className="text-amber-300 font-bold font-display">'{message.message}' is close!</span>
       );
       break;
     case MessageType.WordWas:
-      bgClass = "bg-neutral-100";
+      bgClass = "bg-indigo-950/60 border-indigo-900/40";
       content = (
-        <span className="text-success-main">
+        <span className="text-emerald-300 font-display">
           The word was '<b>{message.message}</b>'
         </span>
       );
       break;
     case MessageType.VoteKick:
-      bgClass = "bg-neutral-100";
-      content = <span className="text-error-main">{message.message}</span>;
+      bgClass = "bg-red-500/10 border-red-500/80";
+      content = <span className="text-red-400 font-display">{message.message}</span>;
       break;
     default:
       break;
@@ -85,10 +86,10 @@ export const Message = ({ message }: { message: IMessage }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      className={`mb-1 p-1 sm:p-0 sm:px-2 sm:py-1 rounded-md ${bgClass} transition-colors duration-200 text-sm sm:text-base`}
+      className={`p-2 rounded-xl border-2 text-xs ${bgClass} transition-colors duration-200`}
     >
       {content}
     </motion.div>

@@ -6,6 +6,7 @@ import { useRoom } from "../context/RoomContext";
 
 const GameCanvas = ({ room }: { room: Room }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [lineWidth, setLineWidth] = useState<number>(5);
   const { myTurn } = useRoom();
   const [color, setColor] = useState<string>("#000000");
@@ -98,7 +99,6 @@ const GameCanvas = ({ room }: { room: Room }) => {
   function clearCanvas() {
     if (!canvasRef.current) return;
     const ctx = canvasRef.current.getContext("2d");
-
     if (ctx) {
       ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
     }
@@ -106,7 +106,6 @@ const GameCanvas = ({ room }: { room: Room }) => {
 
   function handleUndo() {
     if (drawData.current.length === 0) return;
-    // TODO: Update this part in server
     drawData.current.pop();
     while (drawData.current.length > 0) {
       const data = drawData.current.pop();
@@ -120,16 +119,34 @@ const GameCanvas = ({ room }: { room: Room }) => {
   }
 
   useEffect(() => {
+    function resizeCanvas() {
+      if (!containerRef.current || !canvasRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      canvasRef.current.width = rect.width;
+      canvasRef.current.height = rect.height;
+      clearCanvas();
+      loadDrawData();
+    }
+    resizeCanvas();
+    const observer = new ResizeObserver(resizeCanvas);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     socket.on(GameEvent.JOINED_ROOM, loadDrawData);
     socket.on(GameEvent.DRAW_DATA, revieveDrawData);
     socket.on(GameEvent.WORD_CHOSEN, clearCanvas);
+    socket.on(GameEvent.TURN_END, clearCanvas);
+    socket.on(GameEvent.GAME_ENDED, clearCanvas);
     socket.on(GameEvent.CLEAR_DRAW, clearCanvas);
     socket.on(GameEvent.UNDO_DRAW, clearCanvas);
     return () => {
       socket.off(GameEvent.JOINED_ROOM, loadDrawData);
-
       socket.off(GameEvent.DRAW_DATA, revieveDrawData);
       socket.off(GameEvent.WORD_CHOSEN, clearCanvas);
+      socket.off(GameEvent.TURN_END, clearCanvas);
+      socket.off(GameEvent.GAME_ENDED, clearCanvas);
       socket.off(GameEvent.CLEAR_DRAW, clearCanvas);
       socket.off(GameEvent.UNDO_DRAW, clearCanvas);
     };
@@ -137,9 +154,9 @@ const GameCanvas = ({ room }: { room: Room }) => {
 
   return (
     <>
-      <div id="game-canvas">
+      <div id="game-canvas" ref={containerRef} className="w-full h-full min-h-[300px]">
         <canvas
-          className="bg-white"
+          className="bg-white rounded-xl"
           ref={canvasRef}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           onMouseDown={(e: any) => startDrawing(e)}
@@ -151,8 +168,6 @@ const GameCanvas = ({ room }: { room: Room }) => {
           onTouchMove={(e: any) => draw(e)}
           onMouseUp={stopDrawing}
           onTouchEnd={stopDrawing}
-          width={800}
-          height={600}
         />
       </div>
 

@@ -21,6 +21,8 @@ import {
   startGame,
   wordSelected,
 } from "../game/roomController";
+import { RoomMetadata } from "../models/RoomMetadata";
+import bcrypt from "bcrypt";
 
 export function setupSocket(io: Server) {
   io.on(GameEvent.CONNECT, (socket: Socket) => {
@@ -31,11 +33,31 @@ export function setupSocket(io: Server) {
         playerData: PlayerData,
         language: Languages = Languages.en,
         roomId?: string,
-        isPrivate?: boolean
+        isPrivate?: boolean,
+        password?: string
       ) => {
         if (!playerData) {
           socket.emit("error", "playerData is required");
           return socket.disconnect();
+        }
+
+        // If joining an existing room, check password for private rooms
+        if (roomId) {
+          try {
+            const metadata = await RoomMetadata.findOne({ roomId });
+            if (metadata && metadata.isPrivate) {
+              if (!password) {
+                return socket.emit("error", "Password required for private room");
+              }
+              const isMatch = await bcrypt.compare(password, metadata.passwordHash || "");
+              if (!isMatch) {
+                return socket.emit("error", "Incorrect password");
+              }
+            }
+          } catch (err) {
+            // If MongoDB isn't connected, allow without password check
+            console.warn("Could not verify room password:", err);
+          }
         }
 
         if (!roomId) {

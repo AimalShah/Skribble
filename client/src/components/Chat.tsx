@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { socket } from "../socketHandler";
 import { GameEvent } from "../types";
 import { SendIcon } from "lucide-react";
-import Button from "./ui/Button";
 import useIsMobile from "../hooks/useIsMobile";
 import { AnimatePresence } from "framer-motion";
 import Message from "./Chat/Message";
 import useMessages from "../hooks/useMessages";
 import { useRoom } from "../context/RoomContext";
-import clsx from "clsx";
 
 const Chat = () => {
   const [message, setMessage] = useState<string>("");
@@ -36,19 +34,13 @@ const Chat = () => {
   }, [messages]);
 
   return (
-    <div className="h-[400px] sm:h-[650px] bg-gradient-to-br from-primary-100 to-secondary-100 w-1/2 sm:w-auto ">
-      {/* <h2 className="text-lg sm:text-2xl font-bold mb-4 text-primary-700 flex items-center gap-3 p-2">
-        <MessageSquareMoreIcon className="mt-2" />
-        <span>Chat</span>
-      </h2> */}
+    <div className="flex flex-col bg-slate-900/80 sketchy-card border-slate-700 overflow-hidden wobbly-glow flex-1 lg:flex-none">
+      <div className="text-sm font-bold uppercase tracking-wider text-yellow-300 border-b-2 border-dashed border-slate-800 pb-2 px-4 pt-3 font-display">
+        Live Chat
+      </div>
 
       <div
-        className={clsx(
-          "h-[400px] sm:h-[600px] overflow-y-auto sm:p-4 bg-background rounded-lg border-2 border-dashed border-primary-300 transition-colors duration-200 scroll-smooth",
-          {
-            "sm:h-[715px]": myTurn,
-          }
-        )}
+        className={`flex-1 overflow-y-auto p-4 space-y-2 min-h-0 ${myTurn ? 'max-h-[300px] lg:max-h-[500px]' : 'max-h-[400px] lg:max-h-[600px]'}`}
         ref={messagesBottomDiv}
       >
         <AnimatePresence>
@@ -64,22 +56,20 @@ const Chat = () => {
             e.preventDefault();
             handleSend();
           }}
-          className="flex relativeflex-col sm:flex-row bottom-0"
+          className="flex gap-2 p-3 border-t-2 border-dashed border-slate-800"
         >
           <input
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type something fun..."
-            className="w-full p-3 pl-4 pr-12 border-2 border-primary-400 rounded-lg sm:rounded-sm font-medium text-text-primary focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-colors duration-200"
+            className="flex-1 bg-slate-950/80 border-2 border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
           />
-          <Button
-            endIcon={<SendIcon />}
-            onClick={handleSend}
-            className="rounded-lg sm:rounded-sm"
-            type="button"
+          <button
+            type="submit"
+            className="p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl sketchy-btn border-indigo-400 transition cursor-pointer"
           >
-            {isMobile && "Send"}
-          </Button>
+            <SendIcon size={16} />
+          </button>
         </form>
       )}
     </div>

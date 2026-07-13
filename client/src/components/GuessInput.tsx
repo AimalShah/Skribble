@@ -4,7 +4,6 @@ import { GameEvent } from "../types";
 
 export default function GuessInput() {
   const [guess, setGuess] = useState<string>("");
-  // const { currentPlayer, me, myTurn } = useRoom();
   const handleSend = () => {
     if (guess.trim()) {
       socket.emit(GameEvent.GUESS, { guess });
@@ -18,16 +17,16 @@ export default function GuessInput() {
         e.preventDefault();
         handleSend();
       }}
-      className="sm:hidden relative flex items-center"
+      className="sm:hidden flex items-center gap-2"
     >
       <input
-        className="w-full p-2 text-center "
+        className="flex-1 bg-slate-900/80 border-2 border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 placeholder-slate-600"
         placeholder="Type your guess"
         value={guess}
         onChange={(e) => setGuess(e.target.value)}
       />
       {guess.length > 0 && (
-        <span className="absolute right-2">{guess.length}</span>
+        <span className="text-xs text-slate-500 font-mono">{guess.length}</span>
       )}
     </form>
   );

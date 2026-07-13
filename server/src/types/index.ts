@@ -19,6 +19,14 @@ export interface PlayerData {
   appearance: [number, number, number];
 }
 
+export interface DrawData {
+  x: number;
+  y: number;
+  color: string;
+  lineWidth: number;
+  end: boolean;
+}
+
 export type EndTurnData = {
   word: string;
   reason: RounEndReason;
@@ -40,7 +48,7 @@ export interface Player extends PlayerData {
 
 export interface GameState {
   currentRound: number;
-  drawingData: string[];
+  drawingData: DrawData[];
   guessedWords: string[];
   word: string;
   currentPlayer: number;

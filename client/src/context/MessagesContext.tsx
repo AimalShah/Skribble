@@ -135,14 +135,14 @@ export default function MessagesContext({
     socket.on("error", addErrorMessage);
 
     return () => {
-      socket.on(GameEvent.GAME_STARTED, clearChat);
+      socket.off(GameEvent.GAME_STARTED, clearChat);
       socket.off(GameEvent.GUESS, addMessageToChat);
       socket.off(GameEvent.PLAYER_JOINED, addPlayerJoinMessage);
       socket.off(GameEvent.PLAYER_LEFT, addPlayerLeftMessage);
       socket.off(GameEvent.GUESSED, addGuessedMessage);
       socket.off(GameEvent.WORD_CHOSEN, addWordChosen);
       socket.off(GameEvent.TURN_END, addWordWas);
-      socket.on(GameEvent.KICKING_VOTE, handleVoteKicking);
+      socket.off(GameEvent.KICKING_VOTE, handleVoteKicking);
       socket.off("error", addErrorMessage);
     };
   });

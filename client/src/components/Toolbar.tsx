@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { GameEvent, RoomState } from "../types";
 import { socket } from "../socketHandler";
-import Button from "./ui/Button";
 import { useRoom } from "../context/RoomContext";
 import LineWidthSelector from "./Toolbar/LineWidthSelector";
+import { Undo2, Eraser } from "lucide-react";
 
 function splitArray<T>(arr: T[]): [T[], T[]] {
   const mid = Math.floor(arr.length / 2);
@@ -84,65 +84,48 @@ const Toolbar: React.FC<ToolbarProps> = ({
   }
 
   return (
-    <div className="px-5 py-2 relative flex justify-between w-full">
+    <div className="px-3 py-2 relative flex justify-between items-center w-full bg-slate-900/80 border-t-2 border-dashed border-slate-700">
       <div className="flex items-center gap-2">
-        <div className=" w-12 h-12 border-2 border-gray-300 rounded-md overflow-hidden relative">
+        <div className="w-10 h-10 border-2 border-slate-600 rounded-xl overflow-hidden relative cursor-pointer shrink-0" onClick={handleSwap}>
           <div
-            className="absolute top-0 left-0 w-full h-full cursor-pointer"
-            onClick={handleSwap}
+            className="absolute top-0 left-0 w-full h-full"
             style={{
               background: `linear-gradient(to bottom right, ${primaryColor} 50%, ${secondaryColor} 50%)`,
             }}
-          ></div>
+          />
         </div>
 
         <div className="flex flex-col">
           {splitArray(colors).map((clrs, i) => (
             <div className="flex" key={i}>
-              {clrs.map((color, j) => {
-                return (
-                  <div
-                    key={j}
-                    onClick={() => handleColorChange(color)}
-                    className={`w-5 h-5 cursor-pointer`}
-                    style={{
-                      backgroundColor: color,
-                    }}
-                  />
-                );
-              })}
+              {clrs.map((color, j) => (
+                <div
+                  key={j}
+                  onClick={() => handleColorChange(color)}
+                  className="w-4 h-4 cursor-pointer hover:scale-125 transition-transform"
+                  style={{ backgroundColor: color }}
+                />
+              ))}
             </div>
           ))}
         </div>
-        {/* <div className=" w-12 h-12  border-2 border-gray-300 rounded-md overflow-hidden relative"></div> */}
-        <LineWidthSelector
-          onSelect={handleLineWidthChange}
-          selectedWidth={selectedLineWidth}
-        />
+        <LineWidthSelector onSelect={handleLineWidthChange} selectedWidth={selectedLineWidth} />
       </div>
-      <div>
-        <button>h</button>
-        <button>d</button>
-      </div>
-      <div className="mb-4 flex space-x-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            socket.emit(GameEvent.DRAW_UNDO);
-            handleUndo();
-          }}
+      <div className="flex gap-2">
+        <button
+          onClick={() => { socket.emit(GameEvent.DRAW_UNDO); handleUndo(); }}
+          className="p-2 bg-slate-800 hover:bg-slate-700 border-2 border-slate-600 rounded-xl text-slate-300 hover:text-white transition cursor-pointer"
+          title="Undo"
         >
-          Undo
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => {
-            socket.emit(GameEvent.DRAW_CLEAR);
-            handleClear();
-          }}
+          <Undo2 size={18} />
+        </button>
+        <button
+          onClick={() => { socket.emit(GameEvent.DRAW_CLEAR); handleClear(); }}
+          className="p-2 bg-slate-800 hover:bg-slate-700 border-2 border-slate-600 rounded-xl text-slate-300 hover:text-white transition cursor-pointer"
+          title="Clear"
         >
-          Clear
-        </Button>
+          <Eraser size={18} />
+        </button>
       </div>
     </div>
   );
