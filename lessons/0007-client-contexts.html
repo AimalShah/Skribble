@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 007 — Client Contexts</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 007 of 10</div>
+<h1>Client Contexts</h1>
+<p class="subtitle">The three React Context providers that manage all client-side state.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll understand how AuthContext, RoomContext, and MessagesContext manage state and handle socket events on the client.</p>
+
+<h2>The Three Layers</h2>
+
+<div class="arch-diagram">
+  &lt;AuthProvider&gt;          ← Global auth state (user, token)
+    &lt;RoomProvider&gt;         ← Game state (room, players, turn)
+      &lt;MessagesProvider&gt;   ← Chat messages
+        &lt;Game /&gt;           ← Components consume all three
+      &lt;/MessagesProvider&gt;
+    &lt;/RoomProvider&gt;
+  &lt;/AuthProvider&gt;</code></pre></div>
+
+<h2>AuthContext</h2>
+<p><span class="file-path">client/src/context/AuthContext.tsx</span></p>
+
+<pre><code>AuthState {
+  user: User | null;
+  token: string | null;
+  loading: boolean;
+}
+
+Functions:
+  login(email, password)
+    → POST /api/auth/login
+    → Stores token + user in localStorage
+    → Updates context state
+
+  register(email, password, displayName)
+    → POST /api/auth/register
+    → Stores token + user in localStorage
+    → Updates context state
+
+  logout()
+    → Clears localStorage
+    → Sets user=null, token=null
+
+  updateUser(user)
+    → Updates context + localStorage
+
+On mount:
+  → If token exists in localStorage, calls GET /api/auth/me
+  → Validates token is still good
+  → If invalid: clears localStorage</code></pre>
+
+<div class="callout callout-info">
+  <strong>Persistence:</strong> AuthContext persists the JWT token and user object to localStorage. On page reload, it re-validates the token with /me before showing the app.
+</div>
+
+<h2>RoomContext</h2>
+<p><span class="file-path">client/src/context/RoomContext.tsx</span></p>
+
+<pre><code>RoomState {
+  room: Room | null;        // Full room object
+  myTurn: boolean;          // Is it my turn to draw?
+  me: Player | null;        // My player object
+  roomState: RoomState;     // Current game state
+  mutedPlayers: Set&lt;string&gt;; // Player IDs I've muted
+}
+
+Socket event listeners:
+  JOINED_ROOM     → Sets room, identifies "me" by socket.id
+  WORD_CHOSEN     → Sets DRAWING state
+  TURN_END        → Sets GUESSED state
+  GAME_STARTED    → Initializes turn/round tracking
+  GAME_ENDED      → Sets WINNER state (resets after delay)
+  PLAYER_JOINED   → Adds player to room.players
+  PLAYER_LEFT     → Removes player from room.players
+  CHOOSE_WORD     → Sets PLAYER_CHOOSE_WORD state
+  GUESS_WORD_CHOSEN → Sets DRAWING state
+  CHOOSING_WORD   → Sets CHOOSING_WORD state
+  GAME_STATE      → Updates gameState for mid-game joins
+
+Functions:
+  changeSetting(setting, value)
+    → Updates local settings state
+
+  mutePlayer(playerId)
+    → Adds to mutedPlayers set
+
+  removeMute(playerId)
+    → Removes from mutedPlayers set</code></pre>
+
+<h2>MessagesContext</h2>
+<p><span class="file-path">client/src/context/MessagesContext.tsx</span></p>
+
+<pre><code>Message {
+  sender?: string;
+  message: string;
+  type: MessageType;
+}
+
+MessageType enum:
+  Guess | PlayerLeft | PlayerJoin | Error |
+  WordGuessed | GuessClose | WordChoosen |
+  WordWas | VoteKick
+
+Socket event listeners:
+  GAME_STARTED     → Clears all messages
+  GUESS            → Adds wrong guess to chat
+  GUESSED          → Adds "guessed correctly" message
+  PLAYER_JOINED    → Adds join message
+  PLAYER_LEFT      → Adds leave message
+  WORD_CHOSEN      → Adds "drawer is drawing" message
+  TURN_END         → Adds "word was: X" message
+  KICKING_VOTE     → Adds vote kick message
+  error            → Adds error message
+
+addMessageToChat(msg):
+  → Filters muted players
+  → For drawer: shows "close" guesses differently
+  → Adds to messages array</code></pre>
+
+<div class="callout callout-warn">
+  <strong>Close guess filtering:</strong> The drawer sees "close" guesses (wrong but similar) highlighted differently. This is server-side logic — the server sends a GUESS_CLOSE event when a guess is within edit distance of the word.
+</div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>Where does AuthContext store the JWT token?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">React state only</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">localStorage</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">A cookie</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">sessionStorage</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>What does RoomContext's myTurn flag control?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">Whether the player can guess</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">Whether the player can draw on the canvas</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Whether the player sees the chat</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Whether the player can vote kick</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>What does MessagesContext do when a muted player sends a guess?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">Shows it with a muted icon</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">Filters it out completely</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">Shows it to everyone else</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">Queues it for later</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll cover the <strong>client pages and components</strong> — how the UI is structured and what each component renders.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can clarify how any context manages its state.
+</div>
+
+<div class="lesson-nav">
+  <a href="0006-room-controller.html">← Room Controller</a>
+  <a href="0008-client-components.html">Next: Client Components →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

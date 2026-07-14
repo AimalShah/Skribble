@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 001 — Skribble Architecture Overview</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 001 of 10</div>
+<h1>Skribble Architecture Overview</h1>
+<p class="subtitle">The big picture: every layer, how they connect, and where each function lives.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll be able to name every major subsystem in Skribble and explain what it's responsible for — without reading any code.</p>
+
+<h2>The Two Halves</h2>
+<p>Skribble is a <strong>client-server application</strong> split into two independent codebases:</p>
+
+<div class="arch-diagram">
+  ┌─────────────────────────────────────────────────┐
+  │                    CLIENT                        │
+  │          React + TypeScript + Vite               │
+  │                                                  │
+  │   Pages ──► Components ──► Socket.IO Client       │
+  │     │           │               │                │
+  │     │      Context Providers    │                │
+  │     │      (Auth, Room, Msgs)   │                │
+  │     │                           │                │
+  │     └── REST API calls ─────────┼──► HTTP ────── │
+  │                                 │                │
+  │                                 └──► WebSocket ──│
+  └─────────────────────────────┬───────────────────┘
+                                │
+                          HTTP + WebSocket
+                                │
+  ┌─────────────────────────────┴───────────────────┐
+  │                    SERVER                        │
+  │        Express + Socket.IO + TypeScript           │
+  │                                                  │
+  │   REST Routes ──► Auth Middleware                 │
+  │        │                                         │
+  │        ├── /api/auth      (register, login, /me) │
+  │        ├── /api/rooms     (create, feed, publish)│
+  │        ├── /api/profile   (view, update)         │
+  │        └── /api/stats     (update game stats)    │
+  │                                                  │
+  │   Socket Handlers ──► Game Logic                  │
+  │        │                                         │
+  │        ├── socketHandlers.ts  (event router)      │
+  │        ├── roomController.ts  (game state machine)│
+  │        └── gameController.ts  (room CRUD)         │
+  │                                                  │
+  │   ┌──────────┐          ┌──────────┐             │
+  │  │ MongoDB   │          │  Redis    │             │
+  │  │ (Users,   │          │ (Live    │             │
+  │  │  Room     │          │  Game    │             │
+  │  │  Metadata)│          │  State)  │             │
+  │  └──────────┘          └──────────┘             │
+  └──────────────────────────────────────────────────┘
+</div>
+
+<h2>The Three Databases</h2>
+<p>Skribble uses a <strong>dual-database pattern</strong> (decided in <a href="../docs/adr/0001.md">ADR-0001</a>):</p>
+
+<table>
+  <tr>
+    <th>Store</th>
+    <th>Purpose</th>
+    <th>What's Inside</th>
+  </tr>
+  <tr>
+    <td><strong>MongoDB</strong></td>
+    <td>Persistent data</td>
+    <td>User accounts, room metadata (for the public feed)</td>
+  </tr>
+  <tr>
+    <td><strong>Redis</strong></td>
+    <td>Ephemeral game state</td>
+    <td>Active rooms, player lists, drawing data, scores</td>
+  </tr>
+  <tr>
+    <td><strong>localStorage</strong></td>
+    <td>Client persistence</td>
+    <td>JWT token, user profile (survives page reloads)</td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>Why two databases?</strong>
+  MongoDB is durable but slower. Redis is fast but ephemeral. Game state needs to be fast (players are actively drawing and guessing), so Redis handles it. User accounts need to survive server restarts, so MongoDB handles them.
+</div>
+
+<h2>The Server: Every File's Job</h2>
+
+<table>
+  <tr><th>File</th><th>Responsibility</th></tr>
+  <tr>
+    <td><span class="file-path">server/src/server.ts</span></td>
+    <td>Entry point. Creates Express app, HTTP server, Socket.IO. Connects to MongoDB. Mounts routes.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/types/index.ts</span></td>
+    <td>All TypeScript types and enums shared by the game logic.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/constants.ts</span></td>
+    <td>Game tuning: timers, points, defaults.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/models/User.ts</span></td>
+    <td>MongoDB schema for users. Password hashing, profile, stats.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/models/RoomMetadata.ts</span></td>
+    <td>MongoDB schema for room display data (public feed).</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/middleware/auth.ts</span></td>
+    <td>JWT verification. Attaches <code>userId</code> to requests.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/routes/auth.ts</span></td>
+    <td>POST register, POST login, GET /me.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/routes/rooms.ts</span></td>
+    <td>Room CRUD: create, list feed, publish/unpublish.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/routes/profile.ts</span></td>
+    <td>View/update user profiles.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/routes/stats.ts</span></td>
+    <td>Increment game statistics after a game ends.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/socket/socketHandlers.ts</span></td>
+    <td>Socket.IO event router. Maps event names to handler functions.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/game/gameController.ts</span></td>
+    <td>Room CRUD: create, fetch, generate IDs.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/game/roomController.ts</span></td>
+    <td><strong>The brain.</strong> All game logic: turns, guessing, scoring, hints, vote kick.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/utils/redis.ts</span></td>
+    <td>Redis read/write helpers with prefix-based key routing.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/utils/roomLock.ts</span></td>
+    <td>In-process mutex per room. Prevents race conditions.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/utils/word.ts</span></td>
+    <td>Word list loading, random selection, underscore conversion.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">server/src/utils/commandline.ts</span></td>
+    <td>Server-side CLI: broadcast, stats, clear, exit.</td>
+  </tr>
+</table>
+
+<h2>The Client: Every File's Job</h2>
+
+<table>
+  <tr><th>File</th><th>Responsibility</th></tr>
+  <tr>
+    <td><span class="file-path">client/src/main.tsx</span></td>
+    <td>Entry point. Renders <code>&lt;App /&gt;</code> into DOM.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/App.tsx</span></td>
+    <td>Router. Defines routes and auth guards.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/socketHandler.ts</span></td>
+    <td>Creates the Socket.IO client instance.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/types/index.ts</span></td>
+    <td>Mirrors server types exactly.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/context/AuthContext.tsx</span></td>
+    <td>Login/register/logout. Persists token to localStorage.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/context/RoomContext.tsx</span></td>
+    <td>All game state: room, players, turn, round, mute list.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/context/MessagesContext.tsx</span></td>
+    <td>In-game chat messages. Filters muted players.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/pages/HomePage.tsx</span></td>
+    <td>Welcome screen, stats dashboard, quick actions.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/pages/FeedPage.tsx</span></td>
+    <td>Browsable list of public rooms. Auto-refreshes.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/pages/CreateRoomPage.tsx</span></td>
+    <td>Room creation form with all settings.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/pages/GameRoomPage.tsx</span></td>
+    <td>Connects socket, joins room, renders Game component.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/pages/ProfilePage.tsx</span></td>
+    <td>Avatar editor, display name, stats.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/Game.tsx</span></td>
+    <td>Main game layout: sidebar, canvas, chat.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/GameCanvas.tsx</span></td>
+    <td>HTML5 Canvas. Drawing, receiving strokes, undo/clear.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/Header.tsx</span></td>
+    <td>Timer, word display (text or underscores), hints.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/Chat.tsx</span></td>
+    <td>Chat panel. Sends guesses, displays messages.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/Toolbar.tsx</span></td>
+    <td>Drawing tools: colors, line width, undo, clear.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/PlayerScores.tsx</span></td>
+    <td>Scoreboard. Sorted by score, shows round info.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">client/src/components/OverlayContent.tsx</span></td>
+    <td>State-dependent overlay: settings, word picker, winner screen.</td>
+  </tr>
+</table>
+
+<h2>How Data Flows</h2>
+<p>There are exactly <strong>two communication channels</strong> between client and server:</p>
+
+<div class="callout callout-info">
+  <strong>1. REST API (HTTP)</strong> — For one-shot operations: register, login, create room, fetch feed, update profile, update stats. Request-response. Used before and after games.
+</div>
+
+<div class="callout callout-info">
+  <strong>2. Socket.IO (WebSocket)</strong> — For real-time game operations: join room, draw, guess, word selection, hints, vote kick. Event-driven. Used during games.
+</div>
+
+<h2>The Game State Machine</h2>
+<p>Every room follows this lifecycle:</p>
+
+<div class="arch-diagram">
+  NOT_STARTED ──► CHOOSING_WORD ──► DRAWING ──┐
+       ▲                                       │
+       │            ┌──────────────────────────┘
+       │            │
+       │            ├──► (all guessed or time up)
+       │            │
+       │            ▼
+       │      TURN_END ──► (next turn?) ──► CHOOSING_WORD
+       │                    (last turn?)
+       │                        │
+       │                        ▼
+       └──────────────── GAME_ENDED
+</div>
+
+<p>Each state transition is triggered by a socket event or timer, and is handled in <span class="file-path">roomController.ts</span>.</p>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>Which database holds live game state (scores, drawing data, player lists)?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, true, 'quiz1')">Redis</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">MongoDB</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">localStorage</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">SQLite</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>Which file contains ALL game logic (turns, guessing, scoring, hints)?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">server/src/server.ts</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">server/src/socket/socketHandlers.ts</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">server/src/game/roomController.ts</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">server/src/game/gameController.ts</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>What are the two communication channels between client and server?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">HTTP and gRPC</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">REST API and Socket.IO</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">WebSocket and GraphQL</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">REST API and Firebase</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll drill into the server entry point and understand exactly how everything boots up — from <code>server.ts</code> creating the Express app, to MongoDB connecting, to Socket.IO listeners being registered.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can clarify any concept, show you the actual code, or explain how specific functions work.
+</div>
+
+<div class="lesson-nav">
+  <span></span>
+  <a href="0002-server-entry-and-boot.html">Next: Server Entry &amp; Boot →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct! This is the right answer.';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson content and try again next time.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 004 — Socket.IO Events</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 004 of 10</div>
+<h1>Socket.IO Events</h1>
+<p class="subtitle">The real-time event system: every event name, what triggers it, and what happens server-side.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll understand the complete event vocabulary between client and server — the 30+ events that power the game.</p>
+
+<h2>Event Flow Pattern</h2>
+<p>Every socket event follows the same pattern:</p>
+
+<div class="arch-diagram">
+  Client emits event          Server handler            Server broadcasts
+  ─────────────────          ──────────────            ─────────────────
+  socket.emit(EVENT, data) → socketHandlers.ts routes → io.to(room).emit(EVENT, data)
+                             to roomController fn
+</div>
+
+<h2>The Socket Handler Router</h2>
+<p><span class="file-path">server/src/socket/socketHandlers.ts</span> is the event router. It maps event names to handler functions:</p>
+
+<pre><code>setupSocket(io) {
+  io.on("connection", (socket) => {
+
+    socket.on(GameEvent.JOIN_ROOM, (data) => {
+      // → handleNewRoom() or handleNewPlayerJoin()
+    });
+
+    socket.on(GameEvent.START_GAME, (data) => {
+      // → startGame()
+    });
+
+    socket.on(GameEvent.DRAW, (data) => {
+      // → handleDrawAction("DRAW", data)
+    });
+
+    socket.on(GameEvent.DRAW_CLEAR, () => {
+      // → handleDrawAction("CLEAR")
+    });
+
+    socket.on(GameEvent.DRAW_UNDO, () => {
+      // → handleDrawAction("UNDO")
+    });
+
+    socket.on(GameEvent.GUESS, (data) => {
+      // → guessWord()
+    });
+
+    socket.on(GameEvent.WORD_SELECT, (data) => {
+      // → wordSelected()
+    });
+
+    socket.on(GameEvent.CHANGE_SETTINGS, (data) => {
+      // → handleSettingsChange()
+    });
+
+    socket.on(GameEvent.DISCONNECT, () => {
+      // → handlePlayerLeft()
+    });
+
+    socket.on(GameEvent.VOTE_KICK, (data) => {
+      // → handleVoteKick()
+    });
+  });
+}</code></pre>
+
+<h2>Complete Event Reference</h2>
+
+<h3>Client → Server Events</h3>
+<table>
+  <tr><th>Event</th><th>Data</th><th>Handler</th><th>What Happens</th></tr>
+  <tr>
+    <td><code>JOIN_ROOM</code></td>
+    <td>{playerData, language, roomId?, isPrivate, password?}</td>
+    <td>handleNewRoom / handleNewPlayerJoin</td>
+    <td>Creates or joins a room. Validates password for private rooms. Adds player to Redis state.</td>
+  </tr>
+  <tr>
+    <td><code>START_GAME</code></td>
+    <td>{customWords?, onlyCustomWords?}</td>
+    <td>startGame</td>
+    <td>Creator-only. Requires 2+ players. Resets scores, starts round 1.</td>
+  </tr>
+  <tr>
+    <td><code>DRAW</code></td>
+    <td>{x, y, color, lineWidth, end}</td>
+    <td>handleDrawAction("DRAW")</td>
+    <td>Validates sender is drawer. Pushes stroke to drawingData. Broadcasts to others.</td>
+  </tr>
+  <tr>
+    <td><code>DRAW_CLEAR</code></td>
+    <td>—</td>
+    <td>handleDrawAction("CLEAR")</td>
+    <td>Clears all drawingData. Broadcasts clear to all.</td>
+  </tr>
+  <tr>
+    <td><code>DRAW_UNDO</code></td>
+    <td>—</td>
+    <td>handleDrawAction("UNDO")</td>
+    <td>Pops last stroke from drawingData. Broadcasts undo to all.</td>
+  </tr>
+  <tr>
+    <td><code>GUESS</code></td>
+    <td>{guess: string}</td>
+    <td>guessWord</td>
+    <td>Compares guess to word. Correct → GUESSED + points. Wrong → broadcast as chat.</td>
+  </tr>
+  <tr>
+    <td><code>WORD_SELECT</code></td>
+    <td>{word: string}</td>
+    <td>wordSelected</td>
+    <td>Sets the word for the turn. Starts draw timer + hint timer.</td>
+  </tr>
+  <tr>
+    <td><code>CHANGE_SETTINGS</code></td>
+    <td>{setting, value}</td>
+    <td>handleSettingsChange</td>
+    <td>Owner-only. Validates and updates room settings in Redis.</td>
+  </tr>
+  <tr>
+    <td><code>VOTE_KICK</code></td>
+    <td>{playerId: string}</td>
+    <td>handleVoteKick</td>
+    <td>Records vote. If majority → removes player + emits KICKED.</td>
+  </tr>
+  <tr>
+    <td><code>DISCONNECT</code></td>
+    <td>—</td>
+    <td>handlePlayerLeft</td>
+    <td>Removes player. Transfers ownership if creator left. Cleans up empty rooms.</td>
+  </tr>
+</table>
+
+<h3>Server → Client Events</h3>
+<table>
+  <tr><th>Event</th><th>Data</th><th>Sent To</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>JOINED_ROOM</code></td>
+    <td>{room: Room}</td>
+    <td>Joining player</td>
+    <td>Confirms join. Full room state.</td>
+  </tr>
+  <tr>
+    <td><code>PLAYER_JOINED</code></td>
+    <td>{player: Player}</td>
+    <td>All in room</td>
+    <td>Broadcasts new player arrival.</td>
+  </tr>
+  <tr>
+    <td><code>PLAYER_LEFT</code></td>
+    <td>{playerId, room?}</td>
+    <td>All in room</td>
+    <td>Broadcasts player departure. Includes updated room if game ended.</td>
+  </tr>
+  <tr>
+    <td><code>GAME_STARTED</code></td>
+    <td>{room}</td>
+    <td>All in room</td>
+    <td>Game begins. Resets turn/round display.</td>
+  </tr>
+  <tr>
+    <td><code>CHOOSE_WORD</code></td>
+    <td>{words: string[], time: number}</td>
+    <td>Drawer only</td>
+    <td>Shows word selection buttons.</td>
+  </tr>
+  <tr>
+    <td><code>CHOOSING_WORD</code></td>
+    <td>{currentPlayer: Player, time: number}</td>
+    <td>Guessers</td>
+    <td>Shows "Player is choosing..." overlay.</td>
+  </tr>
+  <tr>
+    <td><code>WORD_CHOSEN</code></td>
+    <td>{word: string, time: number}</td>
+    <td>Drawer only</td>
+    <td>Reveals the actual word to the drawer.</td>
+  </tr>
+  <tr>
+    <td><code>GUESS_WORD_CHOSEN</code></td>
+    <td>{word: number[], time: number}</td>
+    <td>All</td>
+    <td>Shows underscore lengths. word = [3, 5] for "ice cream".</td>
+  </tr>
+  <tr>
+    <td><code>DRAW_DATA</code></td>
+    <td>DrawData</td>
+    <td>Guessers</td>
+    <td>Live stroke data. Drawer doesn't receive their own.</td>
+  </tr>
+  <tr>
+    <td><code>CLEAR_DRAW</code></td>
+    <td>—</td>
+    <td>All</td>
+    <td>Clears canvas.</td>
+  </tr>
+  <tr>
+    <td><code>UNDO_DRAW</code></td>
+    <td>—</td>
+    <td>All</td>
+    <td>Undoes last stroke.</td>
+  </tr>
+  <tr>
+    <td><code>GUESS</code></td>
+    <td>{sender, guess}</td>
+    <td>All</td>
+    <td>Wrong guess shown as chat message.</td>
+  </tr>
+  <tr>
+    <td><code>GUESSED</code></td>
+    <td>{sender, guess}</td>
+    <td>All</td>
+    <td>Correct guess notification.</td>
+  </tr>
+  <tr>
+    <td><code>GUESS_HINT</code></td>
+    <td>{index, letter}</td>
+    <td>Guessers</td>
+    <td>Reveals one letter in the word.</td>
+  </tr>
+  <tr>
+    <td><code>TURN_END</code></td>
+    <td>{room, {word, reason, time}}</td>
+    <td>All</td>
+    <td>Turn over. Shows the word.</td>
+  </tr>
+  <tr>
+    <td><code>GAME_ENDED</code></td>
+    <td>{room}</td>
+    <td>All</td>
+    <td>Game over. Shows final scores.</td>
+  </tr>
+  <tr>
+    <td><code>SETTINGS_CHANGED</code></td>
+    <td>{setting, value}</td>
+    <td>All</td>
+    <td>Settings updated by owner.</td>
+  </tr>
+  <tr>
+    <td><code>KICKED</code></td>
+    <td>—</td>
+    <td>Kicked player</td>
+    <td>Forces disconnect.</td>
+  </tr>
+  <tr>
+    <td><code>GAME_STATE</code></td>
+    <td>{room}</td>
+    <td>Late joiner</td>
+    <td>Mid-game join sync.</td>
+  </tr>
+</table>
+
+<div class="callout callout-info">
+  <strong>Socket.IO Rooms:</strong> When a player joins, they're added to a Socket.IO "room" matching the roomId. This lets the server broadcast to all players in a game with <code>io.to(roomId).emit(...)</code> without sending events to other games.
+</div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>Which event does the client emit to submit a guess?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">GUESS_WORD</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">GUESS</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">SUBMIT_GUESS</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">WORD_GUESS</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>When a wrong guess is submitted, what does the server broadcast?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">GUESS_FAILED event</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">ERROR event with the guess</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">GUESS event with {sender, guess}</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Nothing — wrong guesses are ignored</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>Which event carries the actual secret word to the drawer?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">CHOOSE_WORD</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">WORD_CHOSEN</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">GUESS_WORD_CHOSEN</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">WORD_REVEALED</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll dive into <strong>gameController.ts</strong> — how rooms are created, stored in Redis, and the utility functions that support them.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can trace any event flow from client to server and back.
+</div>
+
+<div class="lesson-nav">
+  <a href="0003-rest-api-routes.html">← REST API Routes</a>
+  <a href="0005-game-controller.html">Next: Game Controller →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

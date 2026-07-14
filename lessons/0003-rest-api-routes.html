@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 003 — REST API Routes</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 003 of 10</div>
+<h1>REST API Routes</h1>
+<p class="subtitle">Every HTTP endpoint: what it does, what it expects, what it returns.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll know every REST endpoint in the system — their URLs, methods, request bodies, and responses.</p>
+
+<h2>Route Map</h2>
+
+<div class="arch-diagram">
+  /api/auth
+    POST /register     → Create account, return JWT
+    POST /login        → Verify credentials, return JWT
+    GET  /me            → Return current user (auth required)
+
+  /api/rooms
+    POST /              → Create a room (auth required)
+    GET  /feed           → List published rooms (public)
+    POST /:roomId/publish    → Publish to feed (owner only)
+    POST /:roomId/unpublish  → Remove from feed (owner only)
+
+  /api/profile
+    GET  /:userId        → View any user's profile (public)
+    PUT  /               → Update own profile (auth required)
+
+  /api/stats
+    POST /update         → Increment game stats (auth required)
+
+  /api/health
+    GET  /               → { status: "ok" }
+</div>
+
+<h2>Auth Middleware</h2>
+<p>Before diving into routes, understand the guard. <span class="file-path">server/src/middleware/auth.ts</span> does three things:</p>
+
+<pre><code>authMiddleware(req, res, next) {
+  // 1. Extract "Bearer &lt;token&gt;" from Authorization header
+  // 2. Verify JWT with jwt.verify(token, JWT_SECRET)
+  // 3. Attach decoded userId to req.userId
+  //    → If invalid: return 401
+  //    → If valid: call next()
+}
+
+signToken(userId) {
+  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
+}</code></pre>
+
+<p>Every route marked <em>"auth required"</em> runs this middleware before its handler.</p>
+
+<h2>Auth Routes</h2>
+<p><span class="file-path">server/src/routes/auth.ts</span></p>
+
+<h3>POST /api/auth/register</h3>
+<pre><code>// Request body:
+{ email: string, password: string, displayName: string }
+
+// Logic:
+1. Validate all fields present
+2. Check if email already exists → 409 Conflict if yes
+3. Create User document (password auto-hashed by pre-save hook)
+4. Generate JWT token
+5. Return { token, user: { email, displayName, avatar, stats } }</code></pre>
+
+<h3>POST /api/auth/login</h3>
+<pre><code>// Request body:
+{ email: string, password: string }
+
+// Logic:
+1. Find user by email (select: "+password" to include hash)
+2. If not found → 401
+3. Compare password with bcrypt
+4. If mismatch → 401
+5. Generate JWT token
+6. Return { token, user: { email, displayName, avatar, stats } }</code></pre>
+
+<h3>GET /api/auth/me</h3>
+<pre><code>// Headers: Authorization: Bearer &lt;jwt&gt;
+
+// Logic:
+1. authMiddleware extracts userId from JWT
+2. Find user by userId (no password field)
+3. Return { user }</code></pre>
+
+<h2>Room Routes</h2>
+<p><span class="file-path">server/src/routes/rooms.ts</span></p>
+
+<h3>POST /api/rooms</h3>
+<pre><code>// Headers: Authorization: Bearer &lt;jwt&gt;
+// Request body:
+{
+  name: string,
+  isPrivate: boolean,
+  password?: string,      // required if isPrivate
+  language: string,
+  settings: Settings
+}
+
+// Logic:
+1. Generate UUID-style roomId
+2. If private: hash password with bcrypt
+3. Save RoomMetadata to MongoDB
+4. Return { roomId, room: metadata }</code></pre>
+
+<h3>GET /api/rooms/feed</h3>
+<pre><code>// Query params: ?language=en (optional filter)
+
+// Logic:
+1. Find all RoomMetadata where:
+   - published = true
+   - gameState = "NOT_STARTED"
+2. If language param: filter by language
+3. Populate owner's displayName + avatar
+4. Return { rooms: [...] }</code></pre>
+
+<div class="callout callout-info">
+  <strong>Key design:</strong> Only rooms that haven't started yet appear in the feed. Once a game begins, the room disappears from the feed automatically.
+</div>
+
+<h3>POST /api/rooms/:roomId/publish</h3>
+<pre><code>// Headers: Authorization: Bearer &lt;jwt&gt;
+
+// Logic:
+1. Find room by roomId
+2. Verify requester is the owner (ownerId matches userId)
+3. Set published = true
+4. Return { success: true }</code></pre>
+
+<h3>POST /api/rooms/:roomId/unpublish</h3>
+<pre><code>// Same as publish but sets published = false</code></pre>
+
+<h2>Profile Routes</h2>
+<p><span class="file-path">server/src/routes/profile.ts</span></p>
+
+<h3>GET /api/profile/:userId</h3>
+<pre><code>// No auth required
+
+// Logic:
+1. Find user by userId
+2. Return { user: { displayName, avatar, stats } }
+   (no email or password exposed)</code></pre>
+
+<h3>PUT /api/profile</h3>
+<pre><code>// Headers: Authorization: Bearer &lt;jwt&gt;
+// Request body:
+{ displayName?: string, avatar?: { body, eyes, mouth } }
+
+// Logic:
+1. authMiddleware extracts userId
+2. Update only provided fields
+3. Return { user: updated user }</code></pre>
+
+<h2>Stats Routes</h2>
+<p><span class="file-path">server/src/routes/stats.ts</span></p>
+
+<h3>POST /api/stats/update</h3>
+<pre><code>// Headers: Authorization: Bearer &lt;jwt&gt;
+// Request body:
+{
+  gamesPlayed: number,
+  gamesWon: number,
+  totalScore: number,
+  drawingRounds: number,
+  wordsGuessed: number
+}
+
+// Logic:
+1. authMiddleware extracts userId
+2. Use MongoDB $inc operator to atomically increment each stat
+3. Return { success: true }</code></pre>
+
+<div class="callout callout-warn">
+  <strong>Why $inc?</strong> The client sends the <em>delta</em> (how much to increment), not the new total. This prevents race conditions if two game-end events arrive simultaneously.
+</div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>What status code is returned when a duplicate email is used to register?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">400</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">409</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">422</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">500</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>What does GET /api/rooms/feed return?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">All rooms ever created</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">All private rooms</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">Published rooms that haven't started</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Rooms with open slots only</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>Why does POST /api/stats/update use MongoDB's $inc operator?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">It's faster than find-and-replace</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">It prevents race conditions on concurrent updates</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">It validates the input automatically</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">It logs changes to a audit trail</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll cover the <strong>Socket.IO event system</strong> — how the server handles real-time game communication.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can clarify any concept or show you the actual code for any route handler.
+</div>
+
+<div class="lesson-nav">
+  <a href="0002-server-entry-and-boot.html">← Server Entry & Boot</a>
+  <a href="0004-socket-io-events.html">Next: Socket.IO Events →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 008 — Client Components</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 008 of 10</div>
+<h1>Client Components</h1>
+<p class="subtitle">Every React component: what it renders, what it listens to, and what it emits.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll know the role of every component in the client — from pages to game UI to UI primitives.</p>
+
+<h2>Component Hierarchy</h2>
+
+<div class="arch-diagram">
+  App.tsx (Router)
+  ├── /login → AuthForm
+  ├── / → HomePage (Navbar + Welcome + Stats)
+  ├── /feed → FeedPage (Navbar + Room Cards)
+  ├── /create-room → CreateRoomPage (Navbar + Form)
+  ├── /profile → ProfilePage (Navbar + Avatar Editor)
+  └── /room/:roomId → GameRoomPage
+        └── RoomProvider
+            └── Game
+                ├── PlayerScores
+                │   └── PlayerCard (× N)
+                │       └── Dialog (mute, kick, invite)
+                ├── GameCanvas (HTML5 Canvas)
+                ├── OverlayContent
+                │   ├── GameSettings (pre-game)
+                │   ├── ChoosingWord
+                │   ├── WordSelector (drawer picks word)
+                │   └── Winners (final scores)
+                ├── Header (timer + word display)
+                ├── GuessInput (mobile)
+                ├── Chat
+                │   └── Message (× N)
+                ├── Toolbar (drawer only)
+                └── AudioManager (invisible)</div></code></pre></div>
+
+<h2>Pages</h2>
+<table>
+  <tr><th>Page</th><th>Route</th><th>What It Does</th></tr>
+  <tr>
+    <td><span class="file-path">HomePage.tsx</span></td>
+    <td><code>/</code></td>
+    <td>Welcome message, quick action cards (Browse/Create), stats dashboard.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">FeedPage.tsx</span></td>
+    <td><code>/feed</code></td>
+    <td>Fetches published rooms every 10s. Shows room cards. Public: direct join. Private: password modal.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">CreateRoomPage.tsx</span></td>
+    <td><code>/create-room</code></td>
+    <td>Full creation form: name, privacy, password, language, settings, custom words.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">GameRoomPage.tsx</span></td>
+    <td><code>/room/:roomId</code></td>
+    <td>Connects socket, emits JOIN_ROOM, renders Game. Posts stats on GAME_ENDED.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">ProfilePage.tsx</span></td>
+    <td><code>/profile</code></td>
+    <td>Avatar emoji editor, display name, stats display.</td>
+  </tr>
+</table>
+
+<h2>Game Components</h2>
+<table>
+  <tr><th>Component</th><th>Responsibility</th><th>Socket Events</th></tr>
+  <tr>
+    <td><span class="file-path">Game.tsx</span></td>
+    <td>Main layout. Three-column: sidebar | canvas+overlay | chat. Wraps MessagesProvider.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">GameCanvas.tsx</span></td>
+    <td>HTML5 Canvas with touch+mouse. Drawing, receiving strokes, undo/clear. Auto-resizes.</td>
+    <td>Emits: DRAW, DRAW_CLEAR, DRAW_UNDO. Listens: DRAW_DATA, CLEAR_DRAW, UNDO_DRAW, JOINED_ROOM, WORD_CHOSEN, TURN_END, GAME_ENDED.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">Header.tsx</span></td>
+    <td>Timer (red pulse ≤10s). Word display: text for drawer, underscores+hints for guessers.</td>
+    <td>Listens: WORD_CHOSEN, GUESS_WORD_CHOSEN, CHOOSE_WORD, CHOOSING_WORD, TURN_END, GAME_ENDED, GUESS_HINT, GAME_STATE.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">Chat.tsx</td></td>
+    <td>Chat panel. Sends guesses. Auto-scrolls. Uses MessagesContext.</td>
+    <td>Emits: GUESS. Listens: (via MessagesContext)</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">Toolbar.tsx</span></td>
+    <td>Colors (26), line widths (6), undo, clear. Only visible when myTurn + DRAWING.</td>
+    <td>Emits: DRAW, DRAW_CLEAR, DRAW_UNDO.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">PlayerScores.tsx</span></td>
+    <td>Scoreboard. Sorted by score. Shows round info. Renders PlayerCard for each.</td>
+    <td>Listens: PLAYER_JOINED, PLAYER_LEFT, TURN_END.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">PlayerCard.tsx</span></td>
+    <td>Individual card: rank, avatar, name, crown (creator), score. Click → Dialog with mute/kick/invite.</td>
+    <td>Emits: VOTE_KICK.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">OverlayContent.tsx</span></td>
+    <td>State-dependent overlay. NOT_STARTED → settings. CHOOSING_WORD → waiting. PLAYER_CHOOSE_WORD → word buttons. WINNER → scores.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">GuessInput.tsx</span></td>
+    <td>Mobile-only guess input. Shows character count.</td>
+    <td>Emits: GUESS.</td>
+  </tr>
+  <tr>
+    <td><span class="file-path">AudioManager.tsx</span></td>
+    <td>Invisible. Plays sounds: playerJoin.wav, playerLeft.wav, playerGuess.wav.</td>
+    <td>Listens: PLAYER_JOINED, PLAYER_LEFT, GUESSED.</td>
+  </tr>
+</table>
+
+<h2>UI Primitives</h2>
+<table>
+  <tr><th>Component</th><th>Purpose</th></tr>
+  <tr><td><code>Button.tsx</code></td><td>7 variants (primary, secondary, outline, ghost, danger, success, warning, info). 5 sizes. Icons.</td></tr>
+  <tr><td><code>Dialog.tsx</code></td><td>Modal with backdrop blur, Framer Motion animations. Locks body scroll.</td></tr>
+  <tr><td><code>Select.tsx</code></td><td>Styled dropdown with variants, icons, labels, error states.</td></tr>
+  <tr><td><code>CustomWordsInput.tsx</code></td><td>Tag-based word input. Comma/enter to add, X to remove. Animated.</td></tr>
+</table>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>Which component wraps the entire game layout?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">GameRoomPage</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">Game</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">RoomProvider</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">App</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>What happens when the timer drops to 10 seconds or below?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">The game speeds up</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">The timer turns red and pulses</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">A warning sound plays</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Hints stop appearing</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>Which component is responsible for playing sound effects?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">Chat</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">Header</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">AudioManager</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">GameCanvas</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll trace <strong>complete data flows</strong> — following a user action from click to socket event to state change to UI update.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can explain how any component works or what it renders.
+</div>
+
+<div class="lesson-nav">
+  <a href="0007-client-contexts.html">← Client Contexts</a>
+  <a href="0009-data-flow-patterns.html">Next: Data Flow Patterns →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

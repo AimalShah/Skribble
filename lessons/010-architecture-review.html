@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 010 — Architecture Review</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 010 of 10</div>
+<h1>Architecture Review</h1>
+<p class="subtitle">Comprehensive quiz covering every subsystem. Test your knowledge of the full Skribble architecture.</p>
+
+<h2>What You'll Learn</h2>
+<p>This is the final assessment. By passing this quiz, you demonstrate you can explain every layer of the Skribble architecture from memory.</p>
+
+<h2>Quiz: Server Fundamentals</h2>
+
+<div class="quiz" id="q1">
+  <h4>1. What is the entry point file for the server?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q1',false)">server/src/index.ts</li>
+    <li onclick="check(this,'q1',true)">server/src/server.ts</li>
+    <li onclick="check(this,'q1',false)">server/src/app.ts</li>
+    <li onclick="check(this,'q1',false)">server/src/main.ts</li>
+  </ul>
+  <div class="feedback" id="q1-fb"></div>
+</div>
+
+<div class="quiz" id="q2">
+  <h4>2. Which file contains the in-process mutex for room state?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q2',false)">server/src/game/roomController.ts</li>
+    <li onclick="check(this,'q2',false)">server/src/utils/redis.ts</li>
+    <li onclick="check(this,'q2',true)">server/src/utils/roomLock.ts</li>
+    <li onclick="check(this,'q2',false)">server/src/socket/socketHandlers.ts</li>
+  </ul>
+  <div class="feedback" id="q2-fb"></div>
+</div>
+
+<div class="quiz" id="q3">
+  <h4>3. What does the User model's pre('save') hook do?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q3',false)">Validates email format</li>
+    <li onclick="check(this,'q3',true)">Hashes password with bcrypt</li>
+    <li onclick="check(this,'q3',false)">Creates a JWT token</li>
+    <li onclick="check(this,'q3',false)">Sends welcome email</li>
+  </ul>
+  <div class="feedback" id="q3-fb"></div>
+</div>
+
+<div class="quiz" id="q4">
+  <h4>4. How many salt rounds does bcrypt use in this codebase?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q4',false)">5</li>
+    <li onclick="check(this,'q4',false)">8</li>
+    <li onclick="check(this,'q4',true)">10</li>
+    <li onclick="check(this,'q4',false)">12</li>
+  </ul>
+  <div class="feedback" id="q4-fb"></div>
+</div>
+
+<h2>Quiz: REST API</h2>
+
+<div class="quiz" id="q5">
+  <h4>5. What HTTP method creates a new room?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q5',false)">GET /api/rooms</li>
+    <li onclick="check(this,'q5',true)">POST /api/rooms</li>
+    <li onclick="check(this,'q5',false)">PUT /api/rooms</li>
+    <li onclick="check(this,'q5',false)">PATCH /api/rooms</li>
+  </ul>
+  <div class="feedback" id="q5-fb"></div>
+</div>
+
+<div class="quiz" id="q6">
+  <h4>6. Which route returns published rooms for the public feed?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q6',false)">GET /api/rooms</li>
+    <li onclick="check(this,'q6',true)">GET /api/rooms/feed</li>
+    <li onclick="check(this,'q6',false)">GET /api/rooms/public</li>
+    <li onclick="check(this,'q6',false)">GET /api/feed</li>
+  </ul>
+  <div class="feedback" id="q6-fb"></div>
+</div>
+
+<div class="quiz" id="q7">
+  <h4>7. What does POST /api/stats/update use to modify stats?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q7',false)">find() then save()</li>
+    <li onclick="check(this,'q7',true)">MongoDB $inc operator</li>
+    <li onclick="check(this,'q7',false)">findOneAndUpdate() with $set</li>
+    <li onclick="check(this,'q7',false)">Bulk write operation</li>
+  </ul>
+  <div class="feedback" id="q7-fb"></div>
+</div>
+
+<h2>Quiz: Socket.IO Events</h2>
+
+<div class="quiz" id="q8">
+  <h4>8. Which event does the client emit to join a room?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q8',false)">CONNECT_ROOM</li>
+    <li onclick="check(this,'q8',true)">JOIN_ROOM</li>
+    <li onclick="check(this,'q8',false)">ENTER_ROOM</li>
+    <li onclick="check(this,'q8',false)">ROOM_JOIN</li>
+  </ul>
+  <div class="feedback" id="q8-fb"></div>
+</div>
+
+<div class="quiz" id="q9">
+  <h4>9. When a wrong guess is submitted, what event does the server broadcast?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q9',false)">WRONG_GUESS</li>
+    <li onclick="check(this,'q9',false)">GUESS_FAILED</li>
+    <li onclick="check(this,'q9',true)">GUESS</li>
+    <li onclick="check(this,'q9',false)">CHAT_MESSAGE</li>
+  </ul>
+  <div class="feedback" id="q9-fb"></div>
+</div>
+
+<div class="quiz" id="q10">
+  <h4>10. Which event sends the secret word to the drawer?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q10',false)">WORD_REVEALED</li>
+    <li onclick="check(this,'q10',true)">WORD_CHOSEN</li>
+    <li onclick="check(this,'q10',false)">GUESS_WORD_CHOSEN</li>
+    <li onclick="check(this,'q10',false)">CHOOSE_WORD</li>
+  </ul>
+  <div class="feedback" id="q10-fb"></div>
+</div>
+
+<h2>Quiz: Game Logic</h2>
+
+<div class="quiz" id="q11">
+  <h4>11. How are guesser points calculated?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q11',false)">100 - secondsToGuess</li>
+    <li onclick="check(this,'q11',true)">max(200 - secondsToGuess, 0)</li>
+    <li onclick="check(this,'q11',false)">Fixed 100 points per guess</li>
+    <li onclick="check(this,'q11',false)">secondsToGuess × 10</li>
+  </ul>
+  <div class="feedback" id="q11-fb"></div>
+</div>
+
+<div class="quiz" id="q12">
+  <h4>12. How are drawer points calculated?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q12',false)">50 flat per turn</li>
+    <li onclick="check(this,'q12',true)">50 + (correctGuessers × 10)</li>
+    <li onclick="check(this,'q12',false)">10 × correctGuessers</li>
+    <li onclick="check(this,'q12',false)">200 - secondsToGuess</li>
+  </ul>
+  <div class="feedback" id="q12-fb"></div>
+</div>
+
+<div class="quiz" id="q13">
+  <h4>13. How many hints are revealed per turn by default?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q13',false)">1</li>
+    <li onclick="check(this,'q13',false)">3</li>
+    <li onclick="check(this,'q13',true)">2 (default settings)</li>
+    <li onclick="check(this,'q13',false)">ceil(word.length/2)</li>
+  </ul>
+  <div class="feedback" id="q13-fb"></div>
+</div>
+
+<div class="quiz" id="q14">
+  <h4>14. What happens when a player disconnects and they're the drawer?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q14',false)">Game pauses</li>
+    <li onclick="check(this,'q14',true)">The round ends immediately</li>
+    <li onclick="check(this,'q14',false)">A random player becomes drawer</li>
+    <li onclick="check(this,'q14',false)">The game restarts</li>
+  </ul>
+  <div class="feedback" id="q14-fb"></div>
+</div>
+
+<h2>Quiz: Client Architecture</h2>
+
+<div class="quiz" id="q15">
+  <h4>15. Which context manages the JWT token?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q15',false)">RoomContext</li>
+    <li onclick="check(this,'q15',true)">AuthContext</li>
+    <li onclick="check(this,'q15',false)">MessagesContext</li>
+    <li onclick="check(this,'q15',false)">GameContext</li>
+  </ul>
+  <div class="feedback" id="q15-fb"></div>
+</div>
+
+<div class="quiz" id="q16">
+  <h4>16. What component renders the drawing canvas?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q16',false)">Game</li>
+    <li onclick="check(this,'q16',true)">GameCanvas</li>
+    <li onclick="check(this,'q16',false)">Toolbar</li>
+    <li onclick="check(this,'q16',false)">Header</li>
+  </ul>
+  <div class="feedback" id="q16-fb"></div>
+</div>
+
+<div class="quiz" id="q17">
+  <h4>17. How often does FeedPage refresh the room list?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q17',false)">Every 5 seconds</li>
+    <li onclick="check(this,'q17',true)">Every 10 seconds</li>
+    <li onclick="check(this,'q17',false)">Every 30 seconds</li>
+    <li onclick="check(this,'q17',false)">Only on manual refresh</li>
+  </ul>
+  <div class="feedback" id="q17-fb"></div>
+</div>
+
+<div class="quiz" id="q18">
+  <h4>18. What does the OverlayContent component render during DRAWING state?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q18',false)">Word selection buttons</li>
+    <li onclick="check(this,'q18',false)">Game settings</li>
+    <li onclick="check(this,'q18',true)">Nothing (pointer-events disabled)</li>
+    <li onclick="check(this,'q18',false)">Winner screen</li>
+  </ul>
+  <div class="feedback" id="q18-fb"></div>
+</div>
+
+<h2>Quiz: Data Stores</h2>
+
+<div class="quiz" id="q19">
+  <h4>19. What key prefix does Redis use for public rooms?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q19',false)">room:</li>
+    <li onclick="check(this,'q19',true)">publicRoom:</li>
+    <li onclick="check(this,'q19',false)">game:</li>
+    <li onclick="check(this,'q19',false)">lobby:</li>
+  </ul>
+  <div class="feedback" id="q19-fb"></div>
+</div>
+
+<div class="quiz" id="q20">
+  <h4>20. Where is the drawing data stored during a game?</h4>
+  <ul class="options">
+    <li onclick="check(this,'q20',false)">MongoDB</li>
+    <li onclick="check(this,'q20',true)">Redis (in the Room object)</li>
+    <li onclick="check(this,'q20',false)">localStorage</li>
+    <li onclick="check(this,'q20',false)">A file on disk</li>
+  </ul>
+  <div class="feedback" id="q20-fb"></div>
+</div>
+
+<h2>Results</h2>
+<div id="results" style="display:none; margin-top:2rem;">
+  <div class="callout callout-success">
+    <strong id="result-text"></strong>
+  </div>
+</div>
+
+<h2>Congratulations</h2>
+<p>If you scored well on this quiz, you have a solid understanding of the Skribble architecture. You can now:</p>
+<ul>
+  <li>Trace any user action through every layer</li>
+  <li>Explain the purpose of every file and function</li>
+  <li>Identify which files to modify for new features</li>
+  <li>Diagnose where bugs live by reasoning about the architecture</li>
+</ul>
+
+<div class="callout callout-success">
+  <strong>Want to go deeper?</strong>
+  Ask me about any specific function, data flow, or architectural pattern. I can show you the actual code and explain how it works in detail.
+</div>
+
+<div class="lesson-nav">
+  <a href="0009-data-flow-patterns.html">← Data Flow Patterns</a>
+  <span></span>
+</div>
+
+<script>
+let answered = 0;
+let correct = 0;
+const total = 20;
+
+function check(el, quizId, isCorrect) {
+  const quiz = document.getElementById(quizId);
+  const fb = document.getElementById(quizId + '-fb');
+  if (quiz.dataset.answered) return;
+  quiz.dataset.answered = 'true';
+  answered++;
+  const opts = quiz.querySelectorAll('.options li');
+  opts.forEach(o => o.style.pointerEvents = 'none');
+  if (isCorrect) {
+    el.classList.add('correct');
+    fb.textContent = 'Correct!';
+    fb.className = 'feedback show callout callout-success';
+    correct++;
+  } else {
+    el.classList.add('wrong');
+    fb.textContent = 'Incorrect.';
+    fb.className = 'feedback show callout callout-warn';
+    opts.forEach(o => {
+      if (o.onclick && o.onclick.toString().includes('true')) o.classList.add('correct');
+    });
+  }
+  if (answered === total) {
+    const r = document.getElementById('results');
+    r.style.display = 'block';
+    const pct = Math.round((correct / total) * 100);
+    document.getElementById('result-text').textContent =
+      `You scored ${correct}/${total} (${pct}%). ${
+        pct >= 90 ? 'Excellent! You have mastered the Skribble architecture.' :
+        pct >= 70 ? 'Good job! Review the lessons for topics you missed.' :
+        'Keep studying! Review the lessons and try again.'
+      }`;
+  }
+}
+</script>
+
+</body>
+</html>

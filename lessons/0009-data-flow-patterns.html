@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 009 — Data Flow Patterns</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 009 of 10</div>
+<h1>Data Flow Patterns</h1>
+<p class="subtitle">Trace complete user actions from click to state change — the full journey through the system.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll be able to trace any user action through every layer of the system — from button click to database write and back.</p>
+
+<h2>Flow 1: User Registers</h2>
+
+<div class="arch-diagram">
+  Client                          Server
+  ──────                          ──────
+  AuthForm submit
+    → AuthContext.register()
+    → POST /api/auth/register
+    ─────────────────────────────► auth.ts: register()
+                                    → Validate fields
+                                    → Check email exists → 409
+                                    → User.create() [bcrypt hook]
+                                    → signToken(userId)
+    ◄──────── {token, user} ──────
+    → localStorage.setItem(token)
+    → AuthContext updates state
+    → App re-renders, ProtectedRoute passes</div></div>
+
+<h2>Flow 2: User Creates Room</h2>
+
+<div class="arch-diagram">
+  Client                          Server              MongoDB           Redis
+  ──────                          ──────              ───────           ─────
+  CreateRoomPage submit
+    → POST /api/rooms
+    ─────────────────────────────► rooms.ts: create()
+                                    → generateRoomId()
+                                    → bcrypt hash password
+                                    → RoomMetadata.create()
+                                    ────────────────────► SAVE
+                                    ← {roomId, metadata}
+    ◄────────────────────────────
+    [Optional] POST /rooms/:id/publish
+    ─────────────────────────────► rooms.ts: publish()
+                                    → set published=true
+    ← {success}
+    → Navigate to /room/:roomId
+    → GameRoomPage mounts
+    → socket.connect()
+    → emit JOIN_ROOM
+    ─────────────────────────────► socketHandlers.ts
+                                    → handleNewRoom()
+                                    → generateEmptyRoom()
+                                    → setRedisRoom()
+                                    ─────────────────────────► SAVE
+    ◄──────── JOINED_ROOM(room) ──
+    → RoomContext sets room
+    → Game renders</div></div>
+
+<h2>Flow 3: Player Draws a Stroke</h2>
+
+<div class="arch-diagram">
+  Drawer's Client                Server                    Other Clients
+  ──────────────                ──────                    ──────────────
+  Canvas mousemove
+    → draw() called
+    → emit DRAW {x,y,color,w}
+    ──────────────────────────► roomController.ts
+                                 → withRoomLock()
+                                 → Validate sender=drawer
+                                 → Push to drawingData[]
+                                 → setRedisRoom()
+                                 → broadcast DRAW_DATA
+                                 ─────────────────────────────►
+                                                        revieveDrawData()
+                                                        → ctx.lineTo(x,y)
+                                                        → ctx.stroke()</div></div>
+
+<h2>Flow 4: Player Guesses Correctly</h2>
+
+<div class="arch-diagram">
+  Guesser's Client             Server                      All Clients
+  ────────────────             ──────                      ───────────
+  Chat submit "apple"
+    → emit GUESS {guess:"apple"}
+    ──────────────────────────► roomController.ts
+                                 → withRoomLock()
+                                 → guess === word?
+                                 → YES:
+                                   → player.guessed = true
+                                   → player.guessedAt = now
+                                   → emit GUESSED {sender, guess}
+                                 ─────────────────────────────►
+                                 → Check: all guessed?
+                                   → NO: continue
+                                   → YES:
+                                     → givePoints()
+                                     → endRound()
+                                     → emit TURN_END {room, word}
+                                 ─────────────────────────────►
+                                                           Canvas clears
+                                                           Overlay shows word
+                                                           (5s delay)
+                                                           → nextRound()</div></div>
+
+<h2>Flow 5: Game Ends</h2>
+
+<div class="arch-diagram">
+  Server                        All Clients
+  ──────                        ───────────
+  endGame(roomId, io)
+    → Reset roomState=NOT_STARTED
+    → Reset all scores
+    → emit GAME_ENDED {room}
+    ──────────────────────────►
+                              RoomContext: WINNER state
+                              OverlayContent: <Winners/>
+                              GameRoomPage:
+                                → POST /api/stats/update
+                                → {gamesPlayed++, etc.}
+    (10s delay)
+    → For public rooms:
+      → startGameTimers set
+      → Auto-restart game</div></div>
+
+<h2>The Dual-Database Pattern</h2>
+
+<div class="arch-diagram">
+              ┌─────────────────────────────────────┐
+              │            MongoDB                   │
+              │  (persistent, slower, durable)       │
+              │                                      │
+              │  Users collection:                   │
+              │    → email, password, avatar, stats  │
+              │                                      │
+              │  RoomMetadata collection:            │
+              │    → roomId, name, published,        │
+              │      settings, language              │
+              │                                      │
+              │  Used for: REST API only             │
+              │  (auth, profile, feed, stats)        │
+              └──────────────┬───────────────────────┘
+                             │
+                    REST API calls
+                    (before/after games)
+                             │
+              ┌──────────────┴───────────────────────┐
+              │            Redis                     │
+              │  (ephemeral, fast, volatile)          │
+              │                                      │
+              │  "room:{id}" or "publicRoom:{id}":   │
+              │    → players[], gameState,           │
+              │      drawingData[], settings          │
+              │                                      │
+              │  Used for: Socket.IO only            │
+              │  (all game operations)               │
+              └─────────────────────────────────────┘</div></div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>When a user registers, where is the password stored?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, true, 'quiz1')">MongoDB (bcrypt hashed)</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">Redis</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">localStorage</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">A JSON file</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>When does room state move from MongoDB to Redis?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">When the room is created</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">When a player joins via socket</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">When the game starts</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">It never moves — they're separate</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>What happens to drawing data when a game ends?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">It's saved to MongoDB</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">It persists in Redis for replay</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">It's lost when the room is deleted from Redis</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">It's compressed and archived</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the final lesson, we'll do a <strong>full architecture review</strong> — test your knowledge with a comprehensive quiz covering every subsystem.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can trace any data flow from client to database and back.
+</div>
+
+<div class="lesson-nav">
+  <a href="0008-client-components.html">← Client Components</a>
+  <a href="0010-architecture-review.html">Next: Architecture Review →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

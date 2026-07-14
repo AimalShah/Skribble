@@ -1,0 +1,3 @@
+# Skribble Architecture Overview — Student's Starting Point
+
+The student wants to understand every function in the Skribble codebase to grasp the full architecture. This is a codebase comprehension mission — the goal is to be able to trace any user action through every layer, explain every file's purpose from memory, and confidently modify or extend the system. The teaching workspace has been set up with a 10-lesson series covering: architecture overview, server entry, REST API, Socket.IO events, game controller, room controller, client contexts, client components, data flow patterns, and a final comprehensive review quiz.

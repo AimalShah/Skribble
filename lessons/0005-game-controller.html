@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 005 — Game Controller</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 005 of 10</div>
+<h1>Game Controller</h1>
+<p class="subtitle">Room creation, Redis storage, and the utility functions that support game state.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll understand how rooms are created, stored in Redis, and how the gameController supports the main game logic.</p>
+
+<h2>The Three Functions</h2>
+<p><span class="file-path">server/src/game/gameController.ts</span> is small — just three functions that handle room CRUD:</p>
+
+<pre><code>generateRoomId(): string
+  // Returns a UUID v4 format string
+  // Example: "550e8400-e29b-41d4-a716-446655440000"
+
+generateEmptyRoom(socket, isPrivate, language): Room
+  // Creates a new Room object with:
+  //   - roomId from generateRoomId()
+  //   - creator = socket.id
+  //   - gameState with roomState = NOT_STARTED
+  //   - settings = DEFAULT_GAME_SETTINGS
+  // Saves to Redis via setRedisRoom()
+  // Returns the room
+
+getRoomFromSocket(socket): Room
+  // Extracts roomId from socket's room set
+  // (socket.rooms = Set{"socketId", "roomId"})
+  // Fetches room from Redis
+  // Returns null if not found</code></pre>
+
+<div class="callout callout-info">
+  <strong>Why is this separate from roomController?</strong> gameController handles room <em>lifecycle</em> (create, fetch, delete). roomController handles room <em>behavior</em> (game logic). Separating them keeps responsibilities clean.
+</div>
+
+<h2>Redis Storage</h2>
+<p><span class="file-path">server/src/utils/redis.ts</span> handles all Redis operations:</p>
+
+<pre><code>// Key prefixes
+ROOM_PREFIX = "room:"           // Private rooms
+PUBLIC_ROOM_PREFIX = "publicRoom:"  // Public rooms
+
+// Functions
+getRedisRoom(roomId)
+  // Tries "room:{id}" first, then "publicRoom:{id}"
+  // Parses JSON, returns Room object
+
+setRedisRoom(roomId, roomData)
+  // Checks room.isPrivate to choose prefix
+  // Stringifies and stores in Redis
+
+deleteRedisRoom(roomId)
+  // Deletes from BOTH prefixes (idempotent)
+
+getPublicRoom(language)
+  // Scans all "publicRoom:*" keys
+  // Returns first room with:
+  //   - players.length < settings.players (has space)
+  //   - language matches (if specified)
+  // Used for auto-matchmaking
+
+getPublicRooms()
+  // Returns all "publicRoom:*" keys
+  // Used by CLI "clear" command
+
+deletePublicRooms()
+  // Bulk-deletes all public room keys
+  // Used by CLI "clear" command</code></pre>
+
+<h2>Room Lock</h2>
+<p><span class="file-path">server/src/utils/roomLock.ts</span> prevents race conditions:</p>
+
+<pre><code>withRoomLock&lt;T&gt;(roomId, fn): Promise&lt;T&gt;
+  // In-process mutex per roomId
+  // Uses a Map of promises for serialization
+  // If room A has two concurrent operations:
+  //   Op 1 starts, Op 2 waits
+  //   Op 1 finishes, Op 2 starts
+  // Different rooms run in parallel
+
+  // Used by:
+  //   guessWord()
+  //   handleDrawAction()
+  //   handlePlayerLeft()
+  //   handleSettingsChange()
+  //   handleNewPlayerJoin()
+  //   handleVoteKick()</code></pre>
+
+<div class="callout callout-warn">
+  <strong>Why a lock?</strong> Without it, two players guessing simultaneously could corrupt the room state. The lock ensures only one mutation happens at a time per room.
+</div>
+
+<h2>Word Utilities</h2>
+<p><span class="file-path">server/src/utils/word.ts</span> handles word selection:</p>
+
+<pre><code>resolveLanguageCode(language)
+  // Maps display name to code: "English" → "en"
+  // Used to load the right word file
+
+loadWords(language)
+  // Reads server/words/{langCode}.txt
+  // Caches in memory after first read
+  // Returns string[] of words
+
+getRandomWords(n, language, onlyCustomWords, customWords)
+  // If onlyCustomWords: uses custom list only
+  // Otherwise: loads built-in words
+  // Custom words get 3x weighting (duplicated)
+  // Shuffles via Fisher-Yates
+  // Returns first n words
+
+convertToUnderscores(phrase)
+  // "ice cream" → [3, 5]
+  // Used to send word length hints to guessers</code></pre>
+
+<h2>Command Line Interface</h2>
+<p><span class="file-path">server/src/utils/commandline.ts</span> reads stdin for server admin commands:</p>
+
+<pre><code>setupCommandLine(io)
+  // Reads stdin line by line:
+  //   "broadcast &lt;msg&gt;" → emits to all connected clients
+  //   "stats" → prints connected client count
+  //   "clear" → deletes all public rooms from Redis
+  //   "exit" → shuts down server</code></pre>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>What key prefix does Redis use for private rooms?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">room:</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">room:</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">private:</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">game:</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>What does withRoomLock prevent?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">Multiple servers accessing the same room</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">Concurrent state mutations on the same room</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Players joining after the game starts</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">Redis connection timeouts</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>How are custom words weighted compared to built-in words?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">Equal weight</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">2x weight</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">3x weight</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">10x weight</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll cover the <strong>biggest file in the codebase</strong> — roomController.ts — where all game logic lives: turns, guessing, scoring, hints, and more.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can clarify how Redis storage, locking, or word selection works.
+</div>
+
+<div class="lesson-nav">
+  <a href="0004-socket-io-events.html">← Socket.IO Events</a>
+  <a href="0006-room-controller.html">Next: Room Controller →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

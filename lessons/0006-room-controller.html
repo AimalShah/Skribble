@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 006 — Room Controller (Game Logic)</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 006 of 10</div>
+<h1>Room Controller (Game Logic)</h1>
+<p class="subtitle">The brain of Skribble: every game function in the 662-line file that powers turns, guessing, scoring, and more.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll understand every function in <span class="file-path">server/src/game/roomController.ts</span> — the largest and most important file in the server.</p>
+
+<h2>Module-Level State</h2>
+<p>Three Maps track timers that persist across function calls:</p>
+
+<pre><code>timers: Map&lt;string, NodeJS.Timeout&gt;      // Turn timers per room
+hintTimers: Map&lt;string, NodeJS.Timeout&gt;  // Hint reveal timers per room
+startGameTimers: Map&lt;string, NodeJS.Timeout&gt; // Auto-restart timers for public rooms</code></pre>
+
+<h2>Function Reference</h2>
+
+<h3>Timer Management</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>clearTimers(roomId)</code></td>
+    <td>Clears both turn and hint timers. Called before starting new timers.</td>
+  </tr>
+</table>
+
+<h3>Game Lifecycle</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>startGame(room, io)</code></td>
+    <td>Resets all scores to 0. Sets round=1. Emits GAME_STARTED. Calls nextRound().</td>
+  </tr>
+  <tr>
+    <td><code>endGame(roomId, io)</code></td>
+    <td>Resets room to NOT_STARTED. Emits GAME_ENDED. For public rooms: auto-restarts after delay.</td>
+  </tr>
+  <tr>
+    <td><code>endRound(roomId, io, reason)</code></td>
+    <td>Advances to next player. If all players had a turn: advances round. Calls givePoints(). Emits TURN_END with word reveal. Schedules nextRound() or endGame().</td>
+  </tr>
+  <tr>
+    <td><code>nextRound(roomId, io)</code></td>
+    <td>Gets random words. Sends CHOOSE_WORD to drawer. Sends CHOOSING_WORD to guessers. Starts word-choice timer (auto-selects random word on timeout).</td>
+  </tr>
+</table>
+
+<h3>Core Game Actions</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>guessWord(roomId, guess, socket, io)</code></td>
+    <td><strong>Serialized.</strong> Compares guess to current word (case-insensitive). Correct: marks player.guessed, emits GUESSED, checks if all guessed. Wrong: broadcasts guess as chat.</td>
+  </tr>
+  <tr>
+    <td><code>wordSelected(roomId, word, io)</code></td>
+    <td>Clears timers. Sets gameState.word. Sends WORD_CHOSEN (full word) to drawer. Sends GUESS_WORD_CHOSEN (underscores) to guessers. Starts draw timer + hint timer.</td>
+  </tr>
+  <tr>
+    <td><code>sendHint(io, roomId)</code></td>
+    <td>Reveals one random letter. Calculates ceil(word.length/3) positions, picks one. Emits GUESS_HINT. Schedules next hint if more remain.</td>
+  </tr>
+</table>
+
+<h3>Scoring</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>givePoints(roomId)</code></td>
+    <td>Guesser score: <code>max(200 - secondsToGuess, 0)</code>. Drawer score: <code>50 + (correctGuessers × 10)</code>. Updates all player scores.</td>
+  </tr>
+</table>
+
+<h3>Player Management</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>handleNewRoom(io, socket, playerData, language, isPrivate)</code></td>
+    <td>Non-private: tries to find existing public room with space. Private: creates empty room. Then joins the player.</td>
+  </tr>
+  <tr>
+    <td><code>handleNewPlayerJoin(roomId, socket, io, playerData, language)</code></td>
+    <td><strong>Serialized.</strong> Hydrates from MongoDB if not in Redis. Checks max players. Handles reconnection. Adds player. For public rooms: auto-starts when 2+ join.</td>
+  </tr>
+  <tr>
+    <td><code>handlePlayerLeft(socket, io)</code></td>
+    <td><strong>Serialized.</strong> If drawer left: ends round. Removes player. Transfers ownership if creator left. If only 1 player during game: ends game. If 0 players: deletes room.</td>
+  </tr>
+  <tr>
+    <td><code>handleInBetweenJoin(roomId, socket, io)</code></td>
+    <td>For late-joining players. Calculates elapsed time. Sends current game state with word as underscores.</td>
+  </tr>
+  <tr>
+    <td><code>handleVoteKick(socket, io, playerId)</code></td>
+    <td><strong>Serialized.</strong> Tracks votes per target. Requires majority (ceil(players/2)). If reached: removes player, emits PLAYER_LEFT + KICKED.</td>
+  </tr>
+</table>
+
+<h3>Drawing</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>handleDrawAction(socket, action, drawData?)</code></td>
+    <td><strong>Serialized.</strong> Validates sender is drawer. DRAW: pushes to drawingData, broadcasts. CLEAR: empties drawingData. UNDO: pops last stroke. Saves to Redis.</td>
+  </tr>
+</table>
+
+<h3>Settings</h3>
+<table>
+  <tr><th>Function</th><th>Purpose</th></tr>
+  <tr>
+    <td><code>handleSettingsChange(socket, io, setting, value)</code></td>
+    <td><strong>Serialized.</strong> Owner-only. Validates setting name and type. Updates in Redis. Broadcasts SETTINGS_CHANGED.</td>
+  </tr>
+</table>
+
+<h2>The Scoring Formula</h2>
+<div class="callout callout-info">
+  <strong>Guesser points:</strong> <code>max(200 - secondsToGuess, 0)</code><br>
+  Faster guesses = more points. A guess in 5 seconds = 195 points. A guess in 200+ seconds = 0 points.
+</div>
+
+<div class="callout callout-info">
+  <strong>Drawer points:</strong> <code>50 + (correctGuessers × 10)</code><br>
+  Base 50, plus 10 per player who guessed correctly. With 4 guessers all correct: 50 + 40 = 90 points.
+</div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>What happens if the drawer disconnects mid-turn?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">The turn continues with a random drawer</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">The round ends immediately</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">The game pauses until they return</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">Nothing changes</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>How many votes are needed to kick a player in a 4-player game?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">2</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">2 (majority of 4 = ceil(4/2))</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">3</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">All players must agree</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>What happens when a player joins a public room mid-game?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">They're spectating until the next round</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">They receive the current game state with the word masked</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">They're redirected to the lobby</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">The game restarts for everyone</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll switch to the <strong>client side</strong> — how React Context providers manage auth, room state, and messages.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can trace any game logic flow from event to state change.
+</div>
+
+<div class="lesson-nav">
+  <a href="0005-game-controller.html">← Game Controller</a>
+  <a href="0007-client-contexts.html">Next: Client Contexts →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>

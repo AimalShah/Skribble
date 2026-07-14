@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lesson 002 — Server Entry & Boot</title>
+  <link rel="stylesheet" href="../assets/styles.css">
+</head>
+<body>
+
+<div class="lesson-number">Lesson 002 of 10</div>
+<h1>Server Entry &amp; Boot</h1>
+<p class="subtitle">How the server starts up, connects to databases, and wires everything together.</p>
+
+<h2>What You'll Learn</h2>
+<p>By the end of this lesson, you'll know exactly what happens when you run <code>npm run dev</code> in the server — every function call, every connection, every setup step.</p>
+
+<h2>The Entry Point</h2>
+<p><span class="file-path">server/src/server.ts</span> is where it all begins. Here's the boot sequence:</p>
+
+<pre><code>// 1. Create Express app + HTTP server
+const app = express();
+const server = http.createServer(app);
+
+// 2. Configure middleware
+app.use(cors());
+app.use(express.json());
+
+// 3. Mount REST API routes
+app.use("/api/auth", authRoutes);
+app.use("/api/profile", profileRoutes);
+app.use("/api/rooms", roomRoutes);
+app.use("/api/stats", statsRoutes);
+
+// 4. Health check endpoint
+app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+// 5. Connect to MongoDB
+await mongoose.connect(MONGO_URI);
+
+// 6. Create Socket.IO server
+const io = new Server(server, { cors: { origin: "*" } });
+
+// 7. Register socket event handlers
+setupSocket(io);
+
+// 8. Start CLI command listener
+setupCommandLine(io);
+
+// 9. Listen on port 8000
+server.listen(8000);</code></pre>
+
+<div class="callout callout-info">
+  <strong>Key function: <code>createApp()</code></strong>
+  The file exports <code>createApp()</code> which returns <code>{ app, server }</code> without starting the listener. This is for testing — tests can use the Express app with supertest without binding to a port.
+</div>
+
+<h2>Constants: Game Tuning</h2>
+<p><span class="file-path">server/src/constants.ts</span> defines every magic number in the game:</p>
+
+<table>
+  <tr><th>Constant</th><th>Value</th><th>What It Controls</th></tr>
+  <tr><td><code>WORDCHOOSE_TIME</code></td><td>30s</td><td>How long the drawer has to pick a word</td></tr>
+  <tr><td><code>END_ROUND_TIME</code></td><td>5s</td><td>Delay after word reveal before next turn</td></tr>
+  <tr><td><code>WINNER_SHOW_TIME</code></td><td>10s</td><td>How long the winner screen displays</td></tr>
+  <tr><td><code>DRAWER_POINTS</code></td><td>50</td><td>Base points the drawer earns per turn</td></tr>
+  <tr><td><code>BONUS_PER_GUESS</code></td><td>10</td><td>Extra drawer points per correct guesser</td></tr>
+  <tr><td><code>HINTS_TIME</code></td><td>10s</td><td>Seconds between hint letter reveals</td></tr>
+  <tr><td><code>DEFAULT_GAME_SETTINGS</code></td><td>—</td><td>New room defaults: 2 players, 1 round, 60s draw time, 3 words, 2 hints, English</td></tr>
+</table>
+
+<h2>Types: The Vocabulary</h2>
+<p><span class="file-path">server/src/types/index.ts</span> defines every data structure. These types are the <strong>shared language</strong> between all server files (and mirrored in the client).</p>
+
+<h3>Enums</h3>
+<table>
+  <tr><th>Enum</th><th>Values</th><th>Purpose</th></tr>
+  <tr><td><code>RoomState</code></td><td>NOT_STARTED, PLAYER_CHOOSE_WORD, CHOOSING_WORD, DRAWING, GUESSED, TIMEUP, WINNER</td><td>Game lifecycle states</td></tr>
+  <tr><td><code>RounEndReason</code></td><td>ALL_GUESSED=1, TIMEUP=2, LEFT=3</td><td>Why a turn ended</td></tr>
+  <tr><td><code>PlayerAppearance</code></td><td>BODY=0, EYES=1, MOUTH=2</td><td>Avatar part indices</td></tr>
+  <tr><td><code>Languages</code></td><td>en through zh (10 languages)</td><td>Word list selection</td></tr>
+  <tr><td><code>GameEvent</code></td><td>30+ event names</td><td>Socket.IO event type safety</td></tr>
+</table>
+
+<h3>Core Interfaces</h3>
+<pre><code>interface Player {
+  playerId: string;
+  name: string;
+  appearance: [number, number, number]; // [body, eyes, mouth]
+  score: number;
+  guessed: boolean;
+  guessedAt?: number;
+}
+
+interface GameState {
+  currentRound: number;
+  drawingData: DrawData[];      // every stroke point
+  guessedWords: string[];
+  word: string;                  // the secret word
+  currentPlayer: number;         // index into players[]
+  hintLetters: GuessedLetters[];
+  roomState: RoomState;
+  timerStartedAt?: number;
+}
+
+interface Room {
+  roomId: string;
+  creator: string;               // playerId of room owner
+  players: Player[];
+  gameState: GameState;
+  settings: Settings;
+  isPrivate: boolean;
+  vote_kickers: Record&lt;string, string[]&gt;; // target -> voter IDs
+}</code></pre>
+
+<div class="callout callout-warn">
+  <strong>Watch out:</strong> <code>RounEndReason</code> is a typo in the codebase (missing 'd' in "Round"). It's <code>RounEndReason</code>, not <code>RoundEndReason</code>. You'll see this consistently throughout the code.
+</div>
+
+<h2>The Models</h2>
+<h3>User Model (<span class="file-path">server/src/models/User.ts</span>)</h3>
+<p>Stores persistent user data in MongoDB:</p>
+<pre><code>{
+  email: string (unique),
+  password: string (bcrypt hashed, select: false),
+  displayName: string,
+  avatar: { body: number, eyes: number, mouth: number },
+  stats: {
+    gamesPlayed: number,
+    gamesWon: number,
+    totalScore: number,
+    drawingRounds: number,
+    wordsGuessed: number
+  },
+  createdAt: Date
+}</code></pre>
+
+<p>The <code>pre('save')</code> hook automatically hashes passwords with bcrypt (10 salt rounds) before saving. The <code>comparePassword()</code> method verifies passwords during login.</p>
+
+<h3>RoomMetadata Model (<span class="file-path">server/src/models/RoomMetadata.ts</span>)</h3>
+<p>Stores room display data for the public feed:</p>
+<pre><code>{
+  roomId: string (unique, indexed),
+  ownerId: ObjectId (ref User),
+  name: string,
+  isPrivate: boolean,
+  passwordHash?: string,
+  published: boolean,
+  language: string,
+  settings: Settings,
+  playerCount: number,
+  gameState: "NOT_STARTED" | "IN_PROGRESS" | "ENDED",
+  createdAt: Date
+}</code></pre>
+
+<div class="callout callout-info">
+  <strong>Why two room stores?</strong> RoomMetadata in MongoDB is for the <em>public feed</em> — it persists so users can browse rooms. The actual game state (players, scores, drawing data) lives in Redis and is ephemeral.
+</div>
+
+<h2>Quiz: Test Your Understanding</h2>
+
+<div class="quiz" id="quiz1">
+  <h4>What port does the server listen on by default?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz1')">3000</li>
+    <li onclick="checkAnswer(this, true, 'quiz1')">8000</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">5000</li>
+    <li onclick="checkAnswer(this, false, 'quiz1')">4000</li>
+  </ul>
+  <div class="feedback" id="quiz1-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz2">
+  <h4>How many seconds does the drawer have to pick a word?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz2')">15</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">20</li>
+    <li onclick="checkAnswer(this, true, 'quiz2')">30</li>
+    <li onclick="checkAnswer(this, false, 'quiz2')">60</li>
+  </ul>
+  <div class="feedback" id="quiz2-feedback"></div>
+</div>
+
+<div class="quiz" id="quiz3">
+  <h4>What does the User pre('save') hook do?</h4>
+  <ul class="options">
+    <li onclick="checkAnswer(this, false, 'quiz3')">Validates the email format</li>
+    <li onclick="checkAnswer(this, true, 'quiz3')">Hashes the password with bcrypt</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">Sends a welcome email</li>
+    <li onclick="checkAnswer(this, false, 'quiz3')">Creates a default avatar</li>
+  </ul>
+  <div class="feedback" id="quiz3-feedback"></div>
+</div>
+
+<h2>What's Next</h2>
+<p>In the next lesson, we'll cover the <strong>REST API layer</strong> — every route handler for auth, rooms, profiles, and stats.</p>
+
+<div class="callout callout-success">
+  <strong>Stuck? Have questions?</strong>
+  Ask me anything about this lesson. I can clarify any concept or show you the actual code for any function.
+</div>
+
+<div class="lesson-nav">
+  <a href="0001-architecture-overview.html">← Architecture Overview</a>
+  <a href="0003-rest-api-routes.html">Next: REST API Routes →</a>
+</div>
+
+<script>
+function checkAnswer(el, correct, quizId) {
+  const quiz = document.getElementById(quizId);
+  const feedback = document.getElementById(quizId + '-feedback');
+  const options = quiz.querySelectorAll('.options li');
+  options.forEach(o => { o.style.pointerEvents = 'none'; });
+  if (correct) {
+    el.classList.add('correct');
+    feedback.textContent = 'Correct!';
+    feedback.className = 'feedback show callout callout-success';
+  } else {
+    el.classList.add('wrong');
+    feedback.textContent = 'Not quite. Review the lesson and try again.';
+    feedback.className = 'feedback show callout callout-warn';
+  }
+}
+</script>
+
+</body>
+</html>
