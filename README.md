@@ -1,84 +1,75 @@
-# Sync Draw Guess
+# Skribble clone
 
-A real-time, multiplayer drawing and guessing game built using Node.js, Socket.IO, React, and TypeScript. Players join rooms, take turns drawing prompts, and compete to guess the drawings in a fun and interactive environment. With real-time canvas synchronization, timeouts for word selection, and smooth drawing experiences, this project captures the excitement of collaborative gameplay.
+A real-time multiplayer drawing & guessing game (skribble.io style) — with authenticated users, a public room feed, private password-protected rooms, and a paper-and-pencil doodle theme.
+
+## Features
+
+- **Real-time drawing sync** — canvas strokes broadcast instantly to all players via WebSockets
+- **Public & private rooms** — join public rooms straight from the feed, or create a password-protected private room
+- **Public feed** — browse live public rooms by name, owner, player count, and language
+- **Live scoring** — faster correct guesses earn more points; drawers score based on how many players guess correctly
+- **Progressive hints** — letters of the word are revealed at timed intervals
+- **User profiles** — display name, avatar (emoji-based), and aggregated game stats
+- **Moderation** — vote-kick disruptive players, mute players individually
+- **Two-tier auth** — JWT for the REST API, session-based auth for Socket.IO
 
 ## Tech Stack
 
-![Node.js](https://img.shields.io/badge/Node.js-339933?style=flat&logo=node.js&logoColor=white)
-![Socket.IO](https://img.shields.io/badge/Socket.IO-000000?style=flat&logo=socket.io&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat&logo=vite&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+- **Backend:** Node.js, Socket.IO, Redis, MongoDB
+- **Frontend:** React, TypeScript, Vite
+- **Auth:** JWT (API) + session-based (Socket.IO)
 
-## Backend
+## Architecture
 
-The backend is developed using Node.js and Socket.IO. It handles real-time communication between clients and the server.
+Live game state (room, player list, game phase, scores) lives in **Redis** as the single source of truth — ephemeral, and cleared when a room empties. Persistent data (user credentials, profiles, stats) lives in **MongoDB**, surviving across sessions and restarts.
 
-### Server Events
+Game lifecycle: `NOT_STARTED → CHOOSING_WORD → DRAWING → GAME_ENDED`
 
-- **Client Events:**
-  - `connect` - Client connects to the server.
-  - `disconnecting` - Client disconnects from the server.
-  - `joinRoom` - Client joins a room.
-  - `leaveRoom` - Client leaves a room.
-  - `startGame` - Client starts the game.
-  - `draw` - Client sends drawing data.
-  - `guess` - Client sends a guess.
-  - `changeSettings` - Client changes game settings.
-  - `wordSelect` - Client selects a word.
+## Getting Started
 
-- **Server Events:**
-  - `joinedRoom` - Server confirms client has joined the room.
-  - `playerJoined` - Server notifies when a player joins.
-  - `playerLeft` - Server notifies when a player leaves.
-  - `gameStarted` - Server notifies when the game starts.
-  - `gameEnded` - Server notifies when the game ends.
-  - `drawData` - Server sends drawing data to clients.
-  - `guessed` - Server notifies when a word is guessed.
-  - `turnEnded` - Server notifies when a turn ends.
-  - `chooseWord` - Server requests the drawer to choose a word.
-  - `wordChosen` - Server sends the chosen word to clients.
-  - `settingsChanged` - Server notifies when settings are changed.
-  - `guessFail` - Server notifies when a guess fails.
+### Prerequisites
+- Node.js
+- Redis
+- MongoDB
 
-### Room System
+### Clone the repository
+```bash
+git clone https://github.com/AimalShah/Skribble.git
+cd Skribble
+```
 
-Players join a room using a unique room ID. If the drawer takes too long to choose a word, one is automatically assigned. Each turn has a time limit for guessing.
+### Start Redis
+```bash
+docker run -d -p 6379:6379 redis
+```
 
-## Frontend
+### Start the server
+```bash
+cd server
+npm install
+npm run dev
+```
 
-The frontend is developed using React with TypeScript and Vite for a fast development experience.
+### Start the client
+```bash
+cd client
+npm install
+npm run dev
+```
 
-## Installation
+### Environment Variables
 
-  ### Clone the repository
-   ```bash
-   git clone https://github.com/DivyanshuLohani/SyncDrawGuess.git
-   cd SyncDrawGuess
-   ```
+Server `.env`:
+```
+REDDIS_URL=redis://localhost:6379
+MONGODB_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
+```
 
-   ### Start a redis server
-   ```bash
-   docker run -d -p 6379:6379 redis
-   ```
+### Play
 
-   ### Start the server
-   ```bash
-   cd server 
-   npm install && npm run dev
-   ```
+Open [http://localhost:5173](http://localhost:5173)
 
-   ### Start the client
-   ```bash
-   cd client
-   npm install && npm run dev
-   ```
+## License
 
-   ### Playing
-    http://localhost:5173
-    
-   
-## Preview
-[!Watch the video](https://github.com/user-attachments/assets/3c92e898-b9be-43ed-99f4-e02371018176)
+MIT
